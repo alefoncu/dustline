@@ -14,6 +14,7 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "HAL/PlatformTime.h"
+#include "Misc/App.h"
 
 using namespace DUI;
 
@@ -46,15 +47,24 @@ void FDustlineMenu::Start(bool bShowMain)
 {
 	FDustlineSettings::Get().ApplyGlobal();
 	if (!HudWidget.IsValid() && GEngine && GEngine->GameViewport) { HudWidget = BuildHud(); GEngine->GameViewport->AddViewportWidgetContent(HudWidget.ToSharedRef(), 5); }
+	if (!FadeW.IsValid() && GEngine && GEngine->GameViewport)
+	{
+		FadeA = MakeShared<float>(1.f); TSharedPtr<float> A = FadeA;
+		FadeW = SNew(SBorder).BorderImage(Box(FLinearColor::Black, 0.f)).Visibility_Lambda([A]() { return *A > 0.01f ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			.BorderBackgroundColor_Lambda([A]() { *A = FMath::Max(0.f, *A - FApp::GetDeltaTime() * 1.5f); return FLinearColor(1.f, 1.f, 1.f, FMath::SmoothStep(0.f, 1.f, *A)); });
+		GEngine->GameViewport->AddViewportWidgetContent(FadeW.ToSharedRef(), 100);
+	}
 	RestartHintTimer();
 	if (bShowMain) ShowMain();
 }
+void FDustlineMenu::Flash() { if (FadeA.IsValid()) *FadeA = 1.f; }
 
 void FDustlineMenu::Shutdown()
 {
 	Clear();
 	if (GEngine && GEngine->GameViewport && HudWidget.IsValid()) GEngine->GameViewport->RemoveViewportWidgetContent(HudWidget.ToSharedRef());
-	HudWidget.Reset(); Screen = EScreen::None;
+	if (GEngine && GEngine->GameViewport && FadeW.IsValid()) GEngine->GameViewport->RemoveViewportWidgetContent(FadeW.ToSharedRef());
+	FadeW.Reset(); HudWidget.Reset(); Screen = EScreen::None;
 }
 
 void FDustlineMenu::RestartHintTimer() { DriveStart = FPlatformTime::Seconds(); }
@@ -62,7 +72,7 @@ void FDustlineMenu::RestartHintTimer() { DriveStart = FPlatformTime::Seconds(); 
 void FDustlineMenu::ShowMain()
 {
 	ADustlineCar* C = Car.Get(); if (!C) return;
-	C->bPaused = false; C->EnterShowcase();
+	Flash(); C->bPaused = false; C->EnterShowcase();
 	Present(EScreen::Main, BuildMain());
 }
 void FDustlineMenu::ShowPause()
@@ -80,7 +90,7 @@ void FDustlineMenu::StartDriving()
 {
 	ADustlineCar* C = Car.Get(); if (!C) return;
 	Clear(); Screen = EScreen::None; SetUIMode(false);
-	C->bPaused = false; C->ExitShowcase(); RestartHintTimer();
+	Flash(); C->bPaused = false; C->ExitShowcase(); RestartHintTimer();
 }
 void FDustlineMenu::Resume()
 {
@@ -132,16 +142,30 @@ TSharedRef<SWidget> FDustlineMenu::BuildMain()
 
 	// selector de vehículo
 	auto Step = [C](int32 D) { const int32 N = ADustlineCar::NumModels(); const int32 I = (C->Setup.Model + D + N) % N; C->SelectModel(I); C->SaveSetupToDisk(); };
+	auto Bar = [C](const FString& Caption, TFunction<float()> Frac) -> TSharedRef<SWidget>
+	{
+		TSharedRef<float> Shown = MakeShared<float>(0.f);
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[ Text(Caption, 17.f, Label2()) ]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)
+			[ SNew(SBox).WidthOverride(150.f).HeightOverride(8.f)
+				[ SNew(SOverlay)
+					+ SOverlay::Slot()[ SNew(SBorder).BorderImage(Box(Fill(), 4.f)) ]
+					+ SOverlay::Slot().HAlign(HAlign_Left)[ SNew(SBox).WidthOverride_Lambda([Shown, Frac]() { *Shown += (FMath::Clamp(Frac(), 0.02f, 1.f) - *Shown) * (1.f - FMath::Exp(-10.f * FApp::GetDeltaTime())); return 150.f * *Shown; })[ SNew(SBorder).BorderImage(Box(Label(), 4.f)) ] ] ] ];
+	};
 	TSharedRef<SWidget> Switcher = Glass(
 		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Button(TEXT("‹"), [Step]() { Step(-1); }, EBtn::Round, 0.f, 30.f) ]
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0)
-		[ SNew(SBox).WidthOverride(300.f)
-			[ SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ SNew(STextBlock).Font(Font(26.f)).ColorAndOpacity(Label()).Text_Lambda([C]() { return FText::FromString(C ? ADustlineCar::ModelName(C->Setup.Model) : FString()); }) ]
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 2, 0, 0)[ SNew(STextBlock).Font(Font(15.f)).ColorAndOpacity(Label2()).Text_Lambda([C]() { if (!C) return FText(); const ADustlineCar::FGarageStats G = C->GarageStats(); return FText::FromString(FString::Printf(TEXT("%.0f CV  \u00B7  %.0f kg"), G.PeakHP, G.Mass)); }) ] ] ]
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Button(TEXT("›"), [Step]() { Step(1); }, EBtn::Round, 0.f, 30.f) ],
-		40.f, FMargin(14, 12));
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Button(TEXT("\u2039"), [Step]() { Step(-1); }, EBtn::Round, 0.f, 30.f) ]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18, 0)
+		[ SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ SNew(STextBlock).Font(Font(30.f)).ColorAndOpacity(Label()).Text_Lambda([C]() { return FText::FromString(C ? ADustlineCar::ModelName(C->Setup.Model) : FString()); }) ]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 16, 0, 0)
+			[ SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 26, 0)[ Bar(TEXT("Potencia"), [C]() { return C ? C->GarageStats().PeakHP / 480.f : 0.f; }) ]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 26, 0)[ Bar(TEXT("Velocidad"), [C]() { return C ? C->GarageStats().VMaxKmh / 230.f : 0.f; }) ]
+				+ SHorizontalBox::Slot().AutoWidth()[ Bar(TEXT("Ligereza"), [C]() { return C ? 1.f - (C->GarageStats().Mass - 700.f) / 2800.f : 0.f; }) ] ] ]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Button(TEXT("\u203A"), [Step]() { Step(1); }, EBtn::Round, 0.f, 30.f) ],
+		40.f, FMargin(18, 18));
 
 	return SNew(SOverlay)
 		+ SOverlay::Slot()[ SNew(SGradient).Horizontal(true).From(Col(0, 0, 0, 0.82f)).To(Col(0, 0, 0, 0.0f)) ]
@@ -254,7 +278,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildSettings()
 		[ SNew(SButton).ButtonStyle(&FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder")).ContentPadding(FMargin(0))
 			.OnClicked(FOnClicked::CreateLambda([Weak, Idx]() { if (auto M = Weak.Pin()) M->SetPage(Idx); return FReply::Handled(); }))
 			[ SNew(SBorder).BorderImage_Lambda([Weak, Idx]() { auto M = Weak.Pin(); return (M.IsValid() && M->Page == Idx) ? Box(Accent(), 12.f) : Box(DUI::Clear(), 12.f); }).Padding(FMargin(16, 12))
-				[ Text(Names[i], 21.f, Label()) ] ] ];
+				[ Text(Names[i], 23.f, Label()) ] ] ];
 	}
 	(void)Invis;
 
@@ -275,7 +299,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildSettings()
 	return SNew(SOverlay)
 		+ SOverlay::Slot()[ SNew(SBorder).BorderImage(Box(Col(0, 0, 0, 0.55f), 0.f)) ]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
-		[ SNew(SAppear).Rise(18.f)[ SNew(SBox).WidthOverride(1240.f).HeightOverride(760.f)[ Glass(Body, 36.f, FMargin(0)) ] ] ];
+		[ SNew(SAppear).Rise(18.f)[ SNew(SBox).WidthOverride(1400.f).HeightOverride(880.f)[ Glass(Body, 36.f, FMargin(0)) ] ] ];
 }
 
 // ------------------------------------------------------------------ HUD
@@ -287,28 +311,25 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 	auto Driving = [C, Weak]() { auto M = Weak.Pin(); return C && M.IsValid() && M->Screen == EScreen::None && !C->bGarage && !C->bShowcase; };
 	auto Speed = [C, S]() { const float V = C ? C->SpeedKmh : 0.f; return S->Units == 1 ? V * 0.621371f : V; };
 
+	auto SpeedFrac = [C, Speed]() { return C ? FMath::Clamp(Speed() / (C->Sp.VMaxGear * 3.6f * 1.2f * (C && FDustlineSettings::Get().Units == 1 ? 0.621371f : 1.f)), 0.f, 1.f) : 0.f; };
 	TSharedRef<SWidget> SpeedCard = Glass(
 		SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight()
-		[ SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()[ SNew(SBox).WidthOverride(200.f).HAlign(HAlign_Right)[ SNew(STextBlock).Font(Font(112.f, 1)).ColorAndOpacity(Label()).Text_Lambda([Speed]() { return FText::FromString(FString::FromInt(FMath::RoundToInt(Speed()))); }) ] ]
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).Padding(10, 0, 0, 22)[ SNew(STextBlock).Font(Font(26.f)).ColorAndOpacity(Label2()).Text_Lambda([S]() { return FText::FromString(S->Units == 1 ? TEXT("mph") : TEXT("km/h")); }) ] ]
-		+ SVerticalBox::Slot().AutoHeight().Padding(4, 2, 4, 0)
-		[ SNew(SBox).Visibility_Lambda([C]() { return C && C->Setup.Turbo > 0.05f ? EVisibility::Visible : EVisibility::Collapsed; }).HeightOverride(24.f)
-			[ SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 12, 0)[ Text(TEXT("TURBO"), 14.f, Label2()) ]
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
-				[ SNew(SBox).HeightOverride(7.f)
-					[ SNew(SOverlay)
-						+ SOverlay::Slot()[ SNew(SBorder).BorderImage(Box(Fill(), 3.5f)) ]
-						+ SOverlay::Slot().HAlign(HAlign_Left)[ SNew(SBox).WidthOverride_Lambda([C]() { return 10.f + 270.f * FMath::Clamp(C ? C->TurboSpool : 0.f, 0.f, 1.f); })[ SNew(SBorder).BorderImage(Box(Orange(), 3.5f)) ] ] ] ] ] ]
-		+ SVerticalBox::Slot().AutoHeight().Padding(4, 12, 4, 0)
-		[ SNew(STextBlock).Font(Font(18.f)).ColorAndOpacity(Label2()).Text_Lambda([C]()
+		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+		[ SNew(SBox).WidthOverride(330.f).HeightOverride(300.f)
+			[ SNew(SOverlay)
+				+ SOverlay::Slot()[ SNew(SArc).Thickness(14.f).Inset(4.f).Color(Accent()).Value_Lambda(SpeedFrac) ]
+				+ SOverlay::Slot().Padding(0, 0, 0, 0)[ SNew(SBox).Visibility_Lambda([C]() { return C && C->Setup.Turbo > 0.05f ? EVisibility::Visible : EVisibility::Collapsed; })[ SNew(SArc).Thickness(7.f).Inset(26.f).Color(Orange()).Value_Lambda([C]() { return C ? C->TurboSpool : 0.f; }) ] ]
+				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(0, 0, 0, 14)
+				[ SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ SNew(STextBlock).Font(Font(104.f, 1)).ColorAndOpacity(Label()).Text_Lambda([Speed]() { return FText::FromString(FString::FromInt(FMath::RoundToInt(Speed()))); }) ]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ SNew(STextBlock).Font(Font(26.f)).ColorAndOpacity(Label2()).Text_Lambda([S]() { return FText::FromString(S->Units == 1 ? TEXT("mph") : TEXT("km/h")); }) ] ] ] ]
+		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 4, 0, 0)
+		[ SNew(STextBlock).Font(Font(20.f)).ColorAndOpacity(Label2()).Text_Lambda([C]()
 			{
 				const TCHAR* Wx = ADustlineCar::GSnow > 0.5f ? TEXT("Nieve") : (ADustlineCar::GWet > 0.5f ? TEXT("Lluvia") : TEXT("Despejado"));
-				return FText::FromString(FString::Printf(TEXT("%s  ·  %s"), C ? *C->SurfaceName : TEXT(""), Wx));
+				return FText::FromString(FString::Printf(TEXT("%s  \u00B7  %s"), C ? *C->SurfaceName : TEXT(""), Wx));
 			}) ],
-		30.f, FMargin(30, 14, 30, 22));
+		40.f, FMargin(26, 24, 26, 22));
 
 	TSharedRef<SWidget> Chip = Glass(
 		SNew(SHorizontalBox)

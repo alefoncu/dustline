@@ -83,6 +83,7 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	struct FGarageStats { float HP, PeakHP, Mass, PowerToWeight, VMaxKmh, Clearance; int32 Cyl; };
 	FGarageStats GarageStats() const;
+	FGarageStats StatsFor(const FDustlineSetup& S) const;
 	void SelectModel(int32 Index);
 	void MarkSetupDirty() { bSetupDirty = true; }
 	void SaveSetupToDisk() const;

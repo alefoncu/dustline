@@ -47,20 +47,22 @@ void ADustlineCar::SelectModel(int32 Index)
 	Setup = S; bSetupDirty = true;
 }
 
-ADustlineCar::FGarageStats ADustlineCar::GarageStats() const
+ADustlineCar::FGarageStats ADustlineCar::StatsFor(const FDustlineSetup& S) const
 {
-	const FDustlineModel& M = GetModel(Setup.Model);
+	const FDustlineModel& M = GetModel(S.Model);
 	FGarageStats R;
-	R.HP = Setup.EngineCC * 0.065f; R.PeakHP = R.HP * (1.f + 0.5f * Setup.Turbo);
-	const float wheelMass = Setup.TireRadiusM * Setup.TireRadiusM * Setup.TireWidthM * 520.f, stock = M.Radius * M.Radius * M.Width * 520.f;
-	R.Mass = FMath::Max(450.f, M.Mass + (Setup.EngineCC - M.CC) * 0.065f + (Setup.Turbo - M.Turbo) * 30.f + (wheelMass - stock) + Setup.Ballast + (Setup.TravelM - M.Travel) * 60.f);
-	R.VMaxKmh = 34.f * (Setup.TireRadiusM / 0.46f) * (1.f + 0.12f * Setup.Turbo) * (M.Style == 2 ? 0.8f : 1.f) * 3.6f;
+	R.HP = S.EngineCC * 0.065f; R.PeakHP = R.HP * (1.f + 0.5f * S.Turbo);
+	const float wheelMass = S.TireRadiusM * S.TireRadiusM * S.TireWidthM * 520.f, stock = M.Radius * M.Radius * M.Width * 520.f;
+	R.Mass = FMath::Max(450.f, M.Mass + (S.EngineCC - M.CC) * 0.065f + (S.Turbo - M.Turbo) * 30.f + (wheelMass - stock) + S.Ballast + (S.TravelM - M.Travel) * 60.f);
+	R.VMaxKmh = 34.f * (S.TireRadiusM / 0.46f) * (1.f + 0.12f * S.Turbo) * (M.Style == 2 ? 0.8f : 1.f) * 3.6f;
 	R.PowerToWeight = R.PeakHP / R.Mass * 1000.f;
 	R.Clearance = GroundClearance();
-	int32 cyl = FMath::Clamp(FMath::RoundToInt(Setup.EngineCC / 650.f), 2, 12); if (cyl > 6 && (cyl % 2)) cyl += 1;
+	int32 cyl = FMath::Clamp(FMath::RoundToInt(S.EngineCC / 650.f), 2, 12); if (cyl > 6 && (cyl % 2)) cyl += 1;
 	R.Cyl = cyl;
 	return R;
 }
+
+ADustlineCar::FGarageStats ADustlineCar::GarageStats() const { return StatsFor(Setup); }
 
 namespace
 {
@@ -153,7 +155,20 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 					{ const float T = Target(); *Shown += (T - *Shown) * (1.f - FMath::Exp(-11.f * FApp::GetDeltaTime())); if (FMath::Abs(*Shown - T) < 0.05f) *Shown = T; return FText::FromString(Fmt(*Shown)); }) ]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0, 1, 0, 0)[ Text(Caption, 14.f, Label2()) ] ];
 	};
-	auto PartCard = [Car](const FPart& P) -> TSharedRef<SWidget>
+	auto DeltaOf = [Car](const FPart& P, int32 Kind) -> float
+	{
+		FDustlineSetup Cand = Car->Setup; P.Apply(Cand);
+		const FGarageStats A = Car->StatsFor(Car->Setup), B = Car->StatsFor(Cand);
+		return Kind == 0 ? B.PeakHP - A.PeakHP : (Kind == 1 ? B.VMaxKmh - A.VMaxKmh : B.Mass - A.Mass);
+	};
+	auto DeltaChip = [Car, DeltaOf](const FPart& P, int32 Kind) -> TSharedRef<SWidget>
+	{
+		return SNew(STextBlock).Font(Font(17.f))
+			.Visibility_Lambda([=]() { return (!P.Match(Car->Setup) && FMath::Abs(DeltaOf(P, Kind)) >= (Kind == 1 ? 1.f : 2.f)) ? EVisibility::Visible : EVisibility::Collapsed; })
+			.ColorAndOpacity_Lambda([=]() { const float D = DeltaOf(P, Kind); const bool bGood = Kind == 2 ? D < 0.f : D > 0.f; return bGood ? Green() : (Kind == 2 ? Orange() : Red()); })
+			.Text_Lambda([=]() { const float D = DeltaOf(P, Kind); return FText::FromString(FString::Printf(TEXT("%s%.0f %s"), D > 0.f ? TEXT("+") : TEXT("\u2212"), FMath::Abs(D), Kind == 0 ? TEXT("CV") : (Kind == 1 ? TEXT("km/h") : TEXT("kg")))); });
+	};
+	auto PartCard = [Car, DeltaChip](const FPart& P) -> TSharedRef<SWidget>
 	{
 		TSharedPtr<SButton> Btn;
 		SAssignNew(Btn, SButton).ButtonStyle(&FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder")).ContentPadding(FMargin(0))
@@ -164,6 +179,11 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 					[ SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()[ Text(P.Name, 21.f, Label()) ]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[ Text(P.Desc, 15.f, Label2(), 0, true) ] ]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).HAlign(HAlign_Right).Padding(12, 0, 0, 0)
+					[ SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[ DeltaChip(P, 0) ]
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[ DeltaChip(P, 1) ]
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[ DeltaChip(P, 2) ] ]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(14, 0, 0, 0)
 					[ SNew(SBox).WidthOverride(26.f).HeightOverride(26.f)
 						[ SNew(SOverlay)
@@ -240,7 +260,7 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 
 	return SNew(SBox).HAlign(HAlign_Right).VAlign(VAlign_Fill).Padding(FMargin(0, 28, 28, 28))
 		[ SNew(SAppear).Rise(0.f)
-			[ SNew(SBox).WidthOverride(540.f)
+			[ SNew(SBox).WidthOverride(640.f)
 				[ Glass(SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 14)[ Header ]
 					+ SVerticalBox::Slot().AutoHeight()[ Stats ]
@@ -389,10 +409,12 @@ void ADustlineCar::UiDemo()
 	else if (Step == 15 && T > 31.f) { Setup.EngineCC = 7000.f; Setup.Turbo = 2.4f; bSetupDirty = true; Step = 16; }
 	else if (Step == 16 && T > 31.2f) { Shot(9); Step = 17; }
 	else if (Step == 17 && T > 31.7f) { Shot(10); Step = 18; }
-	else if (Step == 18 && T > 33.5f) { Setup.TireRadiusM = 0.57f; Setup.TireWidthM = 0.40f; GarageFocus = 2; bSetupDirty = true; Step = 19; }
+	else if (Step == 18 && T > 33.5f) { Setup.TireRadiusM = 0.68f; Setup.TireWidthM = 0.47f; GarageFocus = 2; bSetupDirty = true; Step = 19; }
 	else if (Step == 19 && T > 34.25f) { Shot(11); Step = 21; }
 	else if (Step == 21 && T > 34.7f) { Shot(12); Step = 20; }
-	else if (Step == 20 && T > 37.f) { FPlatformMisc::RequestExit(false); }
+	else if (Step == 20 && T > 35.5f) { GarageFocus = 0; SetXRay(false); Step = 22; }
+	else if (Step == 22 && T > 40.f) { Shot(13); Step = 23; }
+	else if (Step == 23 && T > 42.f) { FPlatformMisc::RequestExit(false); }
 }
 
 void ADustlineCar::UpdateGarageCamera(float Dt)

@@ -72,6 +72,21 @@ namespace DUI
 		EActiveTimerReturnType AnimTick(double, float Dt);
 	};
 
+	/** Aro de medidor (270 grados) con valor animado. */
+	class SArc : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SArc) : _Thickness(10.f), _Inset(0.f), _Color(FLinearColor::White) {}
+			SLATE_ARGUMENT(float, Thickness) SLATE_ARGUMENT(float, Inset) SLATE_ARGUMENT(FLinearColor, Color)
+			SLATE_ATTRIBUTE(float, Value)
+		SLATE_END_ARGS()
+		void Construct(const FArguments& A) { Thick = A._Thickness; Inset = A._Inset; Color = A._Color; Value = A._Value; }
+		virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& G, const FSlateRect& Cull, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle& Style, bool bParentEnabled) const override;
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(200.0, 200.0); }
+	private:
+		float Thick = 10.f, Inset = 0.f; FLinearColor Color; TAttribute<float> Value; mutable float Shown = 0.f;
+	};
+
 	/** Degradado lineal (orientación horizontal o vertical). */
 	class SGradient : public SLeafWidget
 	{

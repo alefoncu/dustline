@@ -33,7 +33,9 @@ public:
 
 private:
 	TWeakObjectPtr<ADustlineCar> Car;
-	TSharedPtr<SWidget> Current, HudWidget;
+	TSharedPtr<SWidget> Current, HudWidget, FadeW;
+	TSharedPtr<float> FadeA;
+	void Flash();
 	TSharedPtr<SBox> PageBox;
 	double DriveStart = 0.0;
 

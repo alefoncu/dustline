@@ -11,6 +11,7 @@
 #include "Fonts/CompositeFont.h"
 #include "Rendering/DrawElements.h"
 #include "HAL/FileManager.h"
+#include "Misc/App.h"
 
 namespace DUI
 {
@@ -44,6 +45,7 @@ FSlateFontInfo Font(float Size, int32 Weight)
 				break;
 			}
 	}
+	Size = FMath::Max(Size, 17.f);
 	FSlateFontInfo F = SF.IsValid() ? FSlateFontInfo(SF, (int32)Size, TEXT("Regular")) : FCoreStyle::GetDefaultFontStyle(Weight ? "Bold" : "Regular", (int32)Size);
 	if (Weight > 0 && SF.IsValid() && Size >= 28.f)
 	{
@@ -149,6 +151,24 @@ int32 SGradient::OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect
 	return Layer + 1;
 }
 
+int32 SArc::OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle& Style, bool) const
+{
+	const float Target = FMath::Clamp(Value.Get(0.f), 0.f, 1.f);
+	Shown += (Target - Shown) * (1.f - FMath::Exp(-9.f * FApp::GetDeltaTime()));
+	const FVector2f S = G.GetLocalSize(), C = S * 0.5f;
+	const float R = FMath::Min(S.X, S.Y) * 0.5f - Inset - Thick * 0.5f;
+	const float A0 = FMath::DegreesToRadians(135.f), Sweep = FMath::DegreesToRadians(270.f);
+	auto Arc = [&](float T, int32 L, FLinearColor Tint)
+	{
+		const int32 N = FMath::Max(2, (int32)(120.f * T)); TArray<FVector2f> P; P.Reserve(N + 1);
+		for (int32 i = 0; i <= N; ++i) { const float A = A0 + Sweep * T * (float)i / (float)N; P.Add(FVector2f(C.X + R * FMath::Cos(A), C.Y + R * FMath::Sin(A))); }
+		FSlateDrawElement::MakeLines(Out, L, G.ToPaintGeometry(), P, ESlateDrawEffect::None, Tint * Style.GetColorAndOpacityTint(), true, Thick);
+	};
+	Arc(1.f, Layer, Col(255, 255, 255, 0.16f));
+	if (Shown > 0.004f) Arc(Shown, Layer + 1, Color);
+	return Layer + 2;
+}
+
 void SAppear::Construct(const FArguments& A)
 {
 	Rise = A._Rise; Delay = A._Delay;
@@ -246,7 +266,7 @@ TSharedRef<SWidget> Group(const TArray<TSharedRef<SWidget>>& Rows)
 TSharedRef<SWidget> Row(const FString& Title, TSharedRef<SWidget> Control, const FString& Sub)
 {
 	TSharedRef<SVerticalBox> L = SNew(SVerticalBox);
-	L->AddSlot().AutoHeight()[ Text(Title, 19.f, Label()) ];
+	L->AddSlot().AutoHeight()[ Text(Title, 21.f, Label()) ];
 	if (!Sub.IsEmpty()) L->AddSlot().AutoHeight().Padding(0, 3, 0, 0)[ Text(Sub, 15.f, Label2(), 0, true) ];
 	return SNew(SBox).MinDesiredHeight(62.f)
 		[ SNew(SHorizontalBox)
@@ -259,7 +279,7 @@ TSharedRef<SWidget> SliderRow(const FString& Title, float Min, float Max, TFunct
 	return SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(20, 14, 20, 0)
 		[ SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(1.f)[ Text(Title, 19.f, Label()) ]
+			+ SHorizontalBox::Slot().FillWidth(1.f)[ Text(Title, 21.f, Label()) ]
 			+ SHorizontalBox::Slot().AutoWidth()[ SNew(STextBlock).Font(Font(18.f)).ColorAndOpacity(Label2()).Text_Lambda([Get, Fmt]() { return FText::FromString(Fmt(Get())); }) ] ]
 		+ SVerticalBox::Slot().AutoHeight().Padding(12, 4, 12, 12)
 		[ SNew(SSlider2).Min(Min).Max(Max).Step(Step).Value_Lambda([Get]() { return Get(); })
