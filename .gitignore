@@ -1,0 +1,18 @@
+# Unreal generated
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+Build/
+.vs/
+*.xcworkspace
+*.xcodeproj
+# generated maps: rebuilt by tools/rebuild_world.sh (binary output changes on every save)
+Content/Maps/*.umap
+Content/Maps/*.uexp
+# Swift prototype
+prototype-swift/.build/
+prototype-swift/*.app
+# misc
+.DS_Store
+*.log
