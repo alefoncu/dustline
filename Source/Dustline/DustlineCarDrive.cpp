@@ -5,6 +5,10 @@
 #include "InputCoreTypes.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "DustlineMenu.h"
+#include "DustlineSettings.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "HAL/PlatformMisc.h"
 #include "UnrealClient.h"
 
@@ -71,6 +75,7 @@ void ADustlineCar::BeginPlay()
 	const TCHAR* Cmd = FCommandLine::Get();
 	int32 Model = 0;
 	if (FParse::Value(Cmd, TEXT("dmodel="), Model)) { Model = FMath::Clamp(Model, 0, NumModels() - 1); Setup = StockSetup(Model); if (!FParse::Param(Cmd, TEXT("stock"))) LoadSetupFromDisk(Model, Setup); Setup.Model = Model; }
+	else { FString Last; if (FFileHelper::LoadFileToString(Last, *(FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("last_model.txt")))) { Model = FMath::Clamp(FCString::Atoi(*Last), 0, NumModels() - 1); Setup = StockSetup(Model); LoadSetupFromDisk(Model, Setup); Setup.Model = Model; } }
 	if (FParse::Param(Cmd, TEXT("autodrive"))) bAutoDrive = true;
 	FString W; if (FParse::Value(Cmd, TEXT("dweather="), W)) { if (W == TEXT("rain")) { GWet = 1.f; } else if (W == TEXT("snow")) { GSnow = 1.f; } }
 	Rebuild();
@@ -241,12 +246,13 @@ void ADustlineCar::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	if (Sp.Mass <= 0.f) return;
+	FString Shot0;
 	const float dt = FMath::Min(DeltaTime, 0.05f);
 	Clock += dt;
 	float Throttle = 0.f, Steer = 0.f; bool Hand = false, Boost = false;
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	if (bAutoDrive) { Throttle = 1.f; Steer = 0.55f * FMath::Sin(Clock * 0.45f); Boost = Clock > 3.f; }
-	else if (PC)
+	else if (PC && !bPaused && !bShowcase && !bGarage && !(Menu.IsValid() && Menu->IsOpen()))
 	{
 		Throttle = (PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up) ? 1.f : 0.f) - (PC->IsInputKeyDown(EKeys::S) || PC->IsInputKeyDown(EKeys::Down) ? 1.f : 0.f);
 		Steer = (PC->IsInputKeyDown(EKeys::A) || PC->IsInputKeyDown(EKeys::Left) ? 1.f : 0.f) - (PC->IsInputKeyDown(EKeys::D) || PC->IsInputKeyDown(EKeys::Right) ? 1.f : 0.f);
@@ -269,13 +275,26 @@ void ADustlineCar::Tick(float DeltaTime)
 		else if (Step == 5 && Clock > 28.f) { Shot(3); Step = 6; }
 		else if (Step == 6 && Clock > 31.f) { FPlatformMisc::RequestExit(false); }
 	}
-	if (PC && PC->WasInputKeyJustPressed(EKeys::G)) ToggleGarage();
+	Cam->FieldOfView = FDustlineSettings::Get().Fov;
+	const bool bDemoRun = bAutoDrive || FParse::Param(FCommandLine::Get(), TEXT("garagedemo")) || FParse::Param(FCommandLine::Get(), TEXT("nomenu")) || FParse::Value(FCommandLine::Get(), TEXT("dshot="), Shot0);
+	if (!bMenuStarted && Clock > 0.3f && PC) { bMenuStarted = true; Menu = MakeShared<FDustlineMenu>(this); Menu->Start(!bDemoRun); }
+	if (PC && Menu.IsValid())
+	{
+		if (PC->WasInputKeyJustPressed(EKeys::Escape)) Menu->OnEscape();
+		else if (PC->WasInputKeyJustPressed(EKeys::G) && !Menu->IsOpen()) ToggleGarage();
+	}
+	else if (PC && PC->WasInputKeyJustPressed(EKeys::G)) ToggleGarage();
+	if (FParse::Param(FCommandLine::Get(), TEXT("uidemo"))) UiDemo();
 	if (bSetupDirty && Clock - LastRebuild > 0.04f) { bSetupDirty = false; LastRebuild = Clock; Rebuild(); }
-	if (bGarage)
+	if (bGarage || bShowcase)
 	{
 		Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
 		for (int32 i = 0; i < 4; ++i) Wh[i].Length = FMath::FInterpTo(Wh[i].Length, Sp.RestLen * 0.55f, dt, 6.f);
 		UpdateVisuals(0.f); UpdateGarageCamera(dt);
+	}
+	else if (bPaused)
+	{
+		UpdateVisuals(0.f); UpdateCamera(dt);
 	}
 	else
 	{
@@ -286,12 +305,6 @@ void ADustlineCar::Tick(float DeltaTime)
 		UpdateCamera(dt);
 	}
 	SpeedKmh = Vel.Size() * 3.6f;
-	// quick HUD + log
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(101, 0.f, FColor::White, FString::Printf(TEXT("%s   %3.0f km/h   %.0f CV  %.0f kg   turbo %d%%"), *ModelName(Setup.Model), SpeedKmh, Sp.HP * (1.f + 0.5f * Setup.Turbo * TurboSpool), Sp.Mass, (int32)(TurboSpool * 100)), true, FVector2D(2.f, 2.f));
-		GEngine->AddOnScreenDebugMessage(102, 0.f, FColor::Yellow, FString::Printf(TEXT("Terreno: %s   barro %d%%  nieve %d%%   [W/S A/D espacio shift R C 1-3 | G garaje]"), *SurfaceName, (int32)(GWet * 100), (int32)(GSnow * 100)), true, FVector2D(1.4f, 1.4f));
-	}
 	LogT += dt; FpsAcc += DeltaTime; ++FpsN;
 	if (LogT > 2.f)
 	{

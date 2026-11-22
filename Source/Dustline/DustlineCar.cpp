@@ -25,7 +25,7 @@ static const FDustlineModel GModels[] = {
 	{ TEXT("Clase G"),          0, 480, 195, 195, 295, 2450, 4000, 1.0f, 0.40f, 0.285f, 0.55f, 1.1f, 1, 0, { FLinearColor(0.50f,0.52f,0.55f), FLinearColor(0.02f,0.02f,0.025f), FLinearColor(0.03f,0.17f,0.07f) } },
 	{ TEXT("Urus"),             1, 510, 202, 164, 300, 2200, 4000, 1.6f, 0.41f, 0.325f, 0.42f, 1.5f, 1, 0, { FLinearColor(0.95f,0.62f,0.02f), FLinearColor(0.70f,0.03f,0.02f), FLinearColor(0.02f,0.02f,0.03f) } },
 	{ TEXT("Panda 4x4"),        2, 370, 165, 156, 230,  980,  900, 0.0f, 0.32f, 0.185f, 0.42f, 0.8f, 1, 0, { FLinearColor(0.85f,0.85f,0.82f), FLinearColor(0.60f,0.03f,0.03f), FLinearColor(0.03f,0.15f,0.45f) } },
-	{ TEXT("Defender clasico"), 3, 440, 180, 200, 279, 1850, 2500, 0.6f, 0.42f, 0.235f, 0.62f, 0.9f, 1, 0, { FLinearColor(0.07f,0.12f,0.04f), FLinearColor(0.60f,0.55f,0.40f), FLinearColor(0.32f,0.03f,0.02f) } },
+	{ TEXT("Defender cl\u00E1sico"), 3, 440, 180, 200, 279, 1850, 2500, 0.6f, 0.42f, 0.235f, 0.62f, 0.9f, 1, 0, { FLinearColor(0.07f,0.12f,0.04f), FLinearColor(0.60f,0.55f,0.40f), FLinearColor(0.32f,0.03f,0.02f) } },
 	{ TEXT("Buggy"),            4, 330, 190, 135, 220,  720, 1600, 1.0f, 0.48f, 0.320f, 0.82f, 0.85f, 4, 1, { FLinearColor(0.95f,0.20f,0.01f), FLinearColor(0.02f,0.30f,0.70f), FLinearColor(0.70f,0.55f,0.02f) } },
 	{ TEXT("Pick-up 4x4"),      5, 530, 186, 185, 310, 2050, 2800, 1.0f, 0.44f, 0.265f, 0.60f, 1.0f, 1, 0, { FLinearColor(0.02f,0.07f,0.30f), FLinearColor(0.60f,0.60f,0.60f), FLinearColor(0.30f,0.02f,0.02f) } },
 	{ TEXT("Rock Crawler"),     6, 390, 190, 190, 250, 1500, 3500, 0.0f, 0.62f, 0.400f, 0.90f, 0.7f, 2, 0, { FLinearColor(0.70f,0.05f,0.01f), FLinearColor(0.70f,0.60f,0.02f), FLinearColor(0.05f,0.05f,0.06f) } },

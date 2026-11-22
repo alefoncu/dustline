@@ -9,11 +9,12 @@ Juego de conducción **off-road de mundo abierto** para macOS, hecho con Unreal 
 - **Mundo** de unos 4 × 4 km generado por código (ruido fractal + erosión hidráulica), con lagos, ~27 000 abetos propios de bajo poligonaje, rocas, troncos y material de terreno automático (hierba, tierra, barro, arena, roca, nieve).
 - **7 coches** (Clase G, Urus, Panda 4x4, Defender, Buggy, Pick-up, Rock Crawler) con carrocerías CC0 de Kenney y **piezas propias generadas por código**: ruedas (carretera, todo terreno, barro, clavos, balón), suspensión, transmisión, motor (en línea o en V según la cilindrada) y turbo.
 - **Física propia** del vehículo (suspensión por trazado, neumáticos por superficie, motor con curva de potencia y turbo con retardo, agua, barro, nieve, colisiones).
+- **Interfaz estilo Apple** (Slate propio): menú principal sobre la escena viva, pausa, ajustes (gráficos, juego, controles), velocímetro con cristal esmerilado y garaje rediseñado. Tipografía SF del sistema (no se distribuye con el juego).
 - **Garaje interactivo** dentro del juego (tecla **G**): cambia modelo, color, motor, turbo, lastre, suspensión, ruedas, neumático y tracción y lo ves al instante; modo rayos X.
 
 ## Controles
 
-`W/S` acelerar y frenar · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `R` enderezar · `C` cámara · `1-3` clima (solo física por ahora) · `G` garaje.
+`W/S` acelerar y frenar · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `R` enderezar · `C` cámara · `1-3` clima (solo física por ahora) · `G` garaje · `Esc` pausa y menú.
 
 ## Estructura
 

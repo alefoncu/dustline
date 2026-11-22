@@ -7,3 +7,8 @@ Todos los recursos de terceros usados son de dominio público (**CC0**):
 - **Poly Haven** (modelos y texturas de vegetación y rocas): rock_09, rock_07, stone_01, boulder_01, dead_tree_trunk, tree_stump_01, shrub_03, shrub_04, fir_sapling, fir_sapling_medium — https://polyhaven.com — CC0.
 
 El resto (código, generadores de mallas, árboles, ruedas, motor, materiales y scripts) es propio.
+
+## Interfaz
+
+- Tipografía: se carga en tiempo de ejecución la fuente del sistema (SF de macOS, `/System/Library/Fonts`); no se incluye en este repositorio. Si no existe, se usa Roboto de Unreal Engine.
+- Icono de la aplicación: diseño propio generado por código (`tools/make_icon.py`).

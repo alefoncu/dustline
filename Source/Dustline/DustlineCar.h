@@ -68,9 +68,19 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Dustline") FString SurfaceName = TEXT("Hierba");
 	static float GWet; static float GSnow;      // weather state shared with the weather system (0..1)
 	void ResetUpright();
-	// ---- garage ----
+	// ---- garage / menús ----
 	UFUNCTION(BlueprintCallable, Category = "Dustline") void ToggleGarage();
 	UPROPERTY(BlueprintReadOnly, Category = "Dustline") bool bGarage = false;
+	bool bShowcase = false;   // menú principal: coche quieto y cámara orbitando
+	bool bPaused = false;     // pausa: física congelada
+	void OpenGarage(TFunction<void()> OnClose = nullptr);
+	void CloseGarage();
+	void EnterShowcase();
+	void ExitShowcase();
+	TSharedPtr<class FDustlineMenu> Menu;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+	struct FGarageStats { float HP, PeakHP, Mass, PowerToWeight, VMaxKmh, Clearance; int32 Cyl; };
+	FGarageStats GarageStats() const;
 	void SelectModel(int32 Index);
 	void MarkSetupDirty() { bSetupDirty = true; }
 	void SaveSetupToDisk() const;
@@ -78,6 +88,8 @@ public:
 	static const FDustlineModel& GetModel(int32 Index);
 
 private:
+	friend class FDustlineMenu;
+	TFunction<void()> OnGarageClosed; bool bMenuStarted = false;
 	// physics state (SI units; position of the centre of mass in cm)
 	FVector Vel = FVector::ZeroVector, AngVel = FVector::ZeroVector;
 	float ZCom = 100.f, SteerAngle = 0.f, TurboSpool = 0.f, CamYaw = 0.f, Clock = 0.f, Accum = 0.f;
@@ -94,6 +106,7 @@ private:
 	FVector GarageCamPos = FVector::ZeroVector, GarageCamTgt = FVector::ZeroVector; bool bGarageCamInit = false;
 	TSharedRef<class SWidget> BuildGarageWidget();
 	void UpdateGarageCamera(float Dt);
+	void UiDemo();
 	FString GarageReadout() const;
 	FString LogLine; float LogT = 0.f; float FpsAcc = 0.f; int32 FpsN = 0;
 	void BuildBody(); void BuildWheels(); void BuildSuspension(); void BuildEngine();
