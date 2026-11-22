@@ -107,6 +107,13 @@ private:
 	TSharedRef<class SWidget> BuildGarageWidget();
 	void UpdateGarageCamera(float Dt);
 	void UiDemo();
+	// animaciones de montaje de piezas
+	float AnimEngine = 1.f, AnimWheels = 1.f, AnimSusp = 1.f, AnimModel = 1.f, AnimPaint = 1.f, BounceT = 9.f;
+	FLinearColor PaintFrom = FLinearColor::Black, PaintShown = FLinearColor::Black;
+	FDustlineSetup LastSetup; bool bHaveLast = false;
+	void NoteSetupChange();
+	void StepAnims(float Dt);
+	void ApplyAnims();
 	FString GarageReadout() const;
 	FString LogLine; float LogT = 0.f; float FpsAcc = 0.f; int32 FpsN = 0;
 	void BuildBody(); void BuildWheels(); void BuildSuspension(); void BuildEngine();

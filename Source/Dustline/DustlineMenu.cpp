@@ -110,7 +110,7 @@ void FDustlineMenu::OnEscape()
 void FDustlineMenu::SetPage(int32 P)
 {
 	Page = P;
-	if (PageBox.IsValid()) PageBox->SetContent(BuildPage(P));
+	if (PageBox.IsValid()) PageBox->SetContent(SNew(SAppear).Rise(10.f)[ BuildPage(P) ]);
 }
 
 // ------------------------------------------------------------------ pantalla principal
@@ -139,7 +139,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildMain()
 		[ SNew(SBox).WidthOverride(300.f)
 			[ SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ SNew(STextBlock).Font(Font(26.f)).ColorAndOpacity(Label()).Text_Lambda([C]() { return FText::FromString(C ? ADustlineCar::ModelName(C->Setup.Model) : FString()); }) ]
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 2, 0, 0)[ Text(TEXT("Coche de serie"), 15.f, Label2()) ] ] ]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 2, 0, 0)[ SNew(STextBlock).Font(Font(15.f)).ColorAndOpacity(Label2()).Text_Lambda([C]() { if (!C) return FText(); const ADustlineCar::FGarageStats G = C->GarageStats(); return FText::FromString(FString::Printf(TEXT("%.0f CV  \u00B7  %.0f kg"), G.PeakHP, G.Mass)); }) ] ] ]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Button(TEXT("›"), [Step]() { Step(1); }, EBtn::Round, 0.f, 30.f) ],
 		40.f, FMargin(14, 12));
 

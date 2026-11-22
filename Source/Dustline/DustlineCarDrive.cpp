@@ -78,7 +78,7 @@ void ADustlineCar::BeginPlay()
 	else { FString Last; if (FFileHelper::LoadFileToString(Last, *(FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("last_model.txt")))) { Model = FMath::Clamp(FCString::Atoi(*Last), 0, NumModels() - 1); Setup = StockSetup(Model); LoadSetupFromDisk(Model, Setup); Setup.Model = Model; } }
 	if (FParse::Param(Cmd, TEXT("autodrive"))) bAutoDrive = true;
 	FString W; if (FParse::Value(Cmd, TEXT("dweather="), W)) { if (W == TEXT("rain")) { GWet = 1.f; } else if (W == TEXT("snow")) { GSnow = 1.f; } }
-	Rebuild();
+	Rebuild(); LastSetup = Setup; PaintShown = Setup.Paint; bHaveLast = true;
 	// drop onto the ground at the spawn point
 	FHitResult Hit; const FVector L0 = GetActorLocation();
 	if (GetWorld()->LineTraceSingleByChannel(Hit, L0 + FVector(0, 0, 3000), L0 - FVector(0, 0, 6000), ECC_Visibility))
@@ -225,6 +225,7 @@ void ADustlineCar::UpdateVisuals(float Throttle)
 		const FQuat Rq = FQuat(FVector(0, 0, 1), yaw) * FQuat(FVector(0, 1, 0), Wh[i].Spin);
 		Wheels[i]->SetRelativeLocationAndRotation(FVector(WP.X, WP.Y, zA - Wh[i].Length * 100.0), Rq);
 	}
+	ApplyAnims();
 	(void)Throttle;
 }
 
@@ -285,7 +286,8 @@ void ADustlineCar::Tick(float DeltaTime)
 	}
 	else if (PC && PC->WasInputKeyJustPressed(EKeys::G)) ToggleGarage();
 	if (FParse::Param(FCommandLine::Get(), TEXT("uidemo"))) UiDemo();
-	if (bSetupDirty && Clock - LastRebuild > 0.04f) { bSetupDirty = false; LastRebuild = Clock; Rebuild(); }
+	if (bSetupDirty && Clock - LastRebuild > 0.04f) { bSetupDirty = false; LastRebuild = Clock; NoteSetupChange(); Rebuild(); }
+	StepAnims(dt);
 	if (bGarage || bShowcase)
 	{
 		Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
