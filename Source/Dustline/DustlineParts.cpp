@@ -211,6 +211,9 @@ void ADustlineCar::BuildEngine()
 	const float zTopHood = gc + 0.50f * (BodyH() - gc);
 	FDustlineMeshBuilder B; const FTransform Keep = B.Xf;
 	const float bw = bore * (bV ? 0.95f : 0.80f);
+	// familia de motor (cada opción del taller tiene su propia silueta)
+	const int32 es = cc < 2000.f ? 0 : (cc < 2800.f ? 1 : (cc < 3600.f ? 2 : (cc < 4800.f ? 3 : (cc < 6300.f ? 4 : (cc < 8000.f ? 5 : 6)))));
+	const int32 coverMat = es == 2 ? SAlu : (es == 3 ? SBlock : (es == 4 ? SAccent : (es == 5 ? SCarbon : (es == 6 ? SChrome : SDark))));
 
 	// bloque, cárter y tapa de distribución
 	B.SuperBox(SBlock, Org + FVector(0, 0, -bore * 0.45f), FVector(hl, bw, bore * 0.95f), 0.22f, 8);
@@ -221,7 +224,7 @@ void ADustlineCar::BuildEngine()
 		const float ang = bV ? (b == 0 ? -34.f : 34.f) : 0.f;
 		B.Xf = FTransform(FQuat(FVector(1, 0, 0), FMath::DegreesToRadians(ang)), Org + FVector(0, 0, bore * 0.15f)) * Keep;
 		B.SuperBox(SAlu, FVector(0, 0, bore * 0.70f), FVector(hl, bore * 0.60f, bore * 0.55f), 0.22f, 8);                                // culata
-		B.SuperBox(SAccent, FVector(0, 0, bore * 1.38f), FVector(hl - 1.5f, bore * 0.52f, bore * 0.20f), 0.30f, 8);                      // tapa de balancines
+		B.SuperBox(coverMat, FVector(0, 0, bore * 1.38f), FVector(hl - 1.5f, bore * 0.52f, bore * 0.20f), 0.30f, 8);                      // tapa de balancines
 		for (int32 r = 0; r < perBank + 1; ++r) B.Box(SDark, FVector(-hl + 2.f + r * (len - 4.f) / perBank, 0, bore * 1.58f), FVector(0.35f, bore * 0.5f, 0.25f));
 		B.Cylinder(SChrome, FVector(hl * 0.55f, bore * 0.25f, bore * 1.55f), FVector(0, 0, 1), 1.3f, 1.4f, 12, true);                      // tapón de aceite
 		B.Box(SChrome, FVector(-hl * 0.3f, 0, bore * 1.60f), FVector(hl * 0.22f, bore * 0.20f, 0.25f));                                  // placa
@@ -236,19 +239,66 @@ void ADustlineCar::BuildEngine()
 	B.Xf = Keep;
 	// admisión: colector con runners, cuerpo de mariposa, tubo y caja de filtro
 	const float zP = Org.Z + bore * (bV ? 1.2f : 2.05f), sgnIn = bV ? 0.f : -1.f;
+	const float xT = Org.X - hl * 0.82f - 2.f;
+	const FVector AirBox(Org.X - hl - 14.f, Org.Y + 20.f, Org.Z + bore * 1.5f);
+	if (es < 5)
+	{
 	B.SuperBox(SAlu, FVector(Org.X, Org.Y + sgnIn * bore * 0.5f, zP), FVector(hl * 0.82f, bore * 0.38f, bore * 0.28f), 0.45f, 10);
 	for (int32 b = 0; b < banks; ++b) for (int32 c = 0; c < perBank; ++c)
 	{
 		const float cx = Org.X - hl + 6.f + c * pitch + pitch * 0.15f; const float sg = bV ? (b == 0 ? -1.f : 1.f) : -1.f;
 		B.TubeVar(SAlu, FDustlineMeshBuilder::Smooth({ FVector(cx, Org.Y + sgnIn * bore * 0.5f, zP), FVector(cx, Org.Y + sg * bore * 0.95f, zP - bore * 0.15f), FVector(cx, Org.Y + sg * bore * 1.05f, Org.Z + bore * 0.60f) }, 5), bore * 0.20f, bore * 0.27f, 10, false);
 	}
-	const float xT = Org.X - hl * 0.82f - 2.f;
 	B.Cylinder(SAlu, FVector(xT, Org.Y + sgnIn * bore * 0.5f, zP), FVector(-1, 0, 0), bore * 0.34f, bore * 0.5f, 16, true);
 	B.Torus(SChrome, FVector(xT - bore * 0.5f, Org.Y + sgnIn * bore * 0.5f, zP), FVector(1, 0, 0), bore * 0.34f, 0.5f, 20, 5);
-	const FVector AirBox(Org.X - hl - 14.f, Org.Y + 20.f, Org.Z + bore * 1.5f);
 	B.SuperBox(SDark, AirBox, FVector(12.f, 8.f, 7.f), 0.3f, 8);
 	B.Box(SMetal, AirBox + FVector(0, 0, 7.4f), FVector(11.f, 7.f, 0.3f));
 	B.TubeVar(SDark, FDustlineMeshBuilder::Smooth({ FVector(xT - bore * 0.5f, Org.Y + sgnIn * bore * 0.5f, zP), FVector(xT - 10.f, Org.Y + 8.f, zP + 3.f), AirBox + FVector(10.f, -6.f, 0) }, 6), bore * 0.30f, bore * 0.30f, 14, true);
+	}
+	// rasgos propios de cada familia de motor
+	{
+		const float zT = Org.Z + bore * 1.95f;
+		switch (es)
+		{
+		case 0:   // compacto: tapa de plástico lisa
+			B.SuperBox(SDark, FVector(Org.X, Org.Y, zT), FVector(hl * 0.9f, bore * 0.92f, 1.5f), 0.3f, 8);
+			B.Box(SMetal, FVector(Org.X, Org.Y, zT + 1.6f), FVector(hl * 0.3f, bore * 0.3f, 0.25f));
+			break;
+		case 1:   // turismo: cubierta decorativa con nervios y emblema
+			B.SuperBox(SDark, FVector(Org.X, Org.Y, zT + 0.5f), FVector(hl * 0.96f, bore * 1.08f, 2.6f), 0.26f, 8);
+			for (int32 q = 0; q < 5; ++q) B.Box(SMetal, FVector(Org.X - hl * 0.62f + q * hl * 0.31f, Org.Y, zT + 3.1f), FVector(0.4f, bore * 0.92f, 0.2f));
+			B.SuperBox(SChrome, FVector(Org.X, Org.Y, zT + 3.3f), FVector(4.f, 2.4f, 0.3f), 0.4f, 6);
+			break;
+		case 2:   // V6 deportivo: pleno de admisión pulido con trompas cromadas
+			B.SuperBox(SAlu, FVector(Org.X, Org.Y, zT + 1.5f), FVector(hl * 0.82f, bore * 0.88f, bore * 0.42f), 0.35f, 10);
+			for (int32 sgn2 = -1; sgn2 <= 1; sgn2 += 2) B.Cylinder(SChrome, FVector(Org.X - hl * 0.8f, Org.Y + sgn2 * bore * 0.38f, zT + 1.5f), FVector(-1, 0, 0), 2.2f, 7.f, 14, true);
+			break;
+		case 3:   // V8 todoterreno: filtro de aire redondo clásico y poleas robustas
+			B.Cylinder(SChrome, FVector(Org.X, Org.Y, zT + 1.f), FVector(0, 0, 1), bore * 2.1f, 5.5f, 28, true);
+			B.Cylinder(SDark, FVector(Org.X, Org.Y, zT + 6.4f), FVector(0, 0, 1), bore * 1.9f, 1.2f, 28, true);
+			B.Torus(SMetal, FVector(Org.X, Org.Y, zT + 6.f), FVector(0, 0, 1), bore * 1.95f, 0.6f, 28, 6);
+			break;
+		case 4:   // V8 alto rendimiento: filtro cónico rojo de admisión directa
+			B.Lathe(SAccent, FVector(Org.X - hl - 8.f, Org.Y - 24.f, Org.Z + bore * 1.3f), FVector(-1, 0, 0), { P2(0, bore * 1.0f), P2(10.f, bore * 1.7f) }, 24);
+			B.Torus(SChrome, FVector(Org.X - hl - 8.f, Org.Y - 24.f, Org.Z + bore * 1.3f), FVector(1, 0, 0), bore * 1.0f, 0.8f, 20, 5);
+			B.TubeVar(SChrome, FDustlineMeshBuilder::Smooth({ FVector(Org.X - hl - 8.f, Org.Y - 24.f, Org.Z + bore * 1.3f), FVector(Org.X - hl * 0.7f, Org.Y - 14.f, zP), FVector(xT, Org.Y + sgnIn * bore * 0.5f, zP) }, 6), bore * 0.62f, bore * 0.62f, 14, true);
+			break;
+		case 5:   // V8 de competición: trompetas de admisión individuales
+			for (int32 b2 = 0; b2 < banks; ++b2) for (int32 c2 = 0; c2 < perBank; ++c2)
+			{
+				const float cx2 = Org.X - hl + 6.f + c2 * pitch + pitch * 0.15f, sg2 = banks == 2 ? (b2 == 0 ? -1.f : 1.f) : 0.f;
+				B.Lathe(SChrome, FVector(cx2, Org.Y + sg2 * bore * 0.75f, Org.Z + bore * 1.75f), FVector(0, 0, 1), { P2(0, bore * 0.42f), P2(bore * 0.30f, bore * 0.52f), P2(bore * 0.75f, bore * 0.86f) }, 18);
+			}
+			break;
+		default:  // V10 extremo: supercargador Roots sobre el motor con polea y toma frontal
+			B.SuperBox(SChrome, FVector(Org.X, Org.Y, zT + 1.f), FVector(hl * 0.86f, bore * 1.25f, bore * 0.85f), 0.3f, 10);
+			for (int32 q = 0; q < 7; ++q) B.Box(SMetal, FVector(Org.X - hl * 0.7f + q * hl * 0.23f, Org.Y, zT + 1.f + bore * 0.88f), FVector(0.45f, bore * 1.1f, 0.3f));
+			B.Cylinder(SAlu, FVector(Org.X + hl * 0.86f, Org.Y, zT + 1.f), FVector(1, 0, 0), bore * 0.55f, 5.f, 20, true);
+			B.Lathe(SBlock, FVector(Org.X + hl * 0.86f + 5.f, Org.Y, zT + 1.f), FVector(1, 0, 0), { P2(0, bore * 0.7f), P2(1.2f, bore * 0.7f), P2(1.2f, bore * 0.4f) }, 24);
+			B.SuperBox(SDark, FVector(Org.X - hl * 0.2f, Org.Y, zT + 1.f + bore * 1.25f), FVector(hl * 0.42f, bore * 0.75f, bore * 0.38f), 0.3f, 8);   // toma de aire
+			break;
+		}
+	}
 	// escape: colectores individuales hacia un colector común
 	TArray<FVector> Collectors;
 	for (int32 b = 0; b < banks; ++b)
@@ -294,7 +344,7 @@ void ADustlineCar::BuildEngine()
 	const float tb = Setup.Turbo;
 	if (tb > 0.05f)
 	{
-		const int32 count = tb > 1.8f ? 2 : 1; const float r = 5.f + tb * 2.8f;
+		const int32 count = tb >= 2.7f ? 3 : (tb >= 1.7f ? 2 : 1); const int32 cMat = tb >= 2.2f ? SChrome : SAlu; const float r = 5.f + tb * 2.8f;
 		const float xi = xr + 18.f, zi = rz - 3.f;   // intercooler delante del radiador
 		const float icw = M.W * (0.17f + 0.06f * tb), ich = 11.f + tb * 1.5f;
 		B.Box(SAlu, FVector(xi, 0, zi), FVector(3.6f + tb * 0.6f, icw, ich));
@@ -302,8 +352,9 @@ void ADustlineCar::BuildEngine()
 		for (int32 s = -1; s <= 1; s += 2) { B.SuperBox(SAlu, FVector(xi, s * (icw + 3.2f), zi), FVector(4.f + tb * 0.5f, 3.6f, ich + 2.f), 0.4f, 8); B.Cylinder(SAlu, FVector(xi, s * (icw + 6.f), zi + (s > 0 ? 5.f : -5.f)), FVector(0, s, 0), 3.0f, 6.f, 14, true); }
 		for (int32 k = 0; k < count; ++k)
 		{
-			const float sgn = (count == 1) ? 1.f : (k == 0 ? -1.f : 1.f);
-			const FVector TP(Org.X - hl * 0.12f, Org.Y + sgn * (bore * 2.35f + r * 1.15f), Org.Z + bore * 0.35f);
+			const float sgn = (count == 1) ? 1.f : (k == 0 ? -1.f : 1.f);   // el tercero va centrado y alto
+			FVector TP(Org.X - hl * 0.12f, Org.Y + sgn * (bore * 2.35f + r * 1.15f), Org.Z + bore * 0.35f);
+			if (count == 3 && k == 2) { TP.Y = Org.Y; TP.Z += bore * 1.4f + r * 1.3f; }
 			// turbina (lado caliente): voluta en espiral
 			TArray<FVector> VoluteH; for (int32 a = 0; a <= 24; ++a) { const float t = a / 24.f * 5.4f; VoluteH.Add(TP + FVector(-r * 0.9f, FMath::Cos(t) * r * 0.80f, FMath::Sin(t) * r * 0.80f)); }
 			B.TubeVar(STurbo, VoluteH, r * 0.20f, r * 0.50f, 12, true);
@@ -314,14 +365,15 @@ void ADustlineCar::BuildEngine()
 			B.Cylinder(SAlu, TP + FVector(-r * 0.30f, 0, 0), FVector(1, 0, 0), r * 0.50f, r * 1.2f, 20, true);
 			for (int32 f = 0; f < 3; ++f) B.Torus(SBlock, TP + FVector(-r * 0.05f + f * r * 0.3f, 0, 0), FVector(1, 0, 0), r * 0.50f, 0.5f, 20, 5);
 			TArray<FVector> VoluteC; for (int32 a = 0; a <= 24; ++a) { const float t = a / 24.f * 5.4f; VoluteC.Add(TP + FVector(r * 1.05f, FMath::Cos(t) * r * 0.78f, FMath::Sin(t) * r * 0.78f)); }
-			B.TubeVar(SAlu, VoluteC, r * 0.20f, r * 0.48f, 12, true);
-			B.Lathe(SAlu, TP + FVector(r * 0.95f, 0, 0), FVector(1, 0, 0), { P2(0, r * 0.95f), P2(r * 0.4f, r * 0.70f), P2(r * 0.9f, r * 0.52f), P2(r * 1.4f, r * 0.48f) }, 24);       // entrada
+			B.TubeVar(cMat, VoluteC, r * 0.20f, r * 0.48f, 12, true);
+			B.Lathe(cMat, TP + FVector(r * 0.95f, 0, 0), FVector(1, 0, 0), { P2(0, r * 0.95f), P2(r * 0.4f, r * 0.70f), P2(r * 0.9f, r * 0.52f), P2(r * 1.4f, r * 0.48f) }, 24);       // entrada
 			B.Torus(SChrome, TP + FVector(r * 2.4f, 0, 0), FVector(1, 0, 0), r * 0.50f, 0.7f, 20, 5);
 			B.TubeVar(SHose, { TP + FVector(r * 2.4f, 0, 0), FVector(AirBox.X + 6.f, AirBox.Y - 6.f, AirBox.Z), }, r * 0.46f, r * 0.46f, 12, true);
 			// wastegate + válvula de descarga
 			B.Lathe(SAlu, TP + FVector(-r * 0.8f, sgn * r * 1.6f, r * 0.9f), FVector(0, sgn, 0), { P2(0, r * 0.35f), P2(r * 0.3f, r * 0.55f), P2(r * 0.9f, r * 0.55f), P2(r * 1.2f, r * 0.30f) }, 16);
 			B.Tube(SChrome, { TP + FVector(-r * 0.8f, sgn * r * 1.6f, r * 0.9f), TP + FVector(-r * 0.9f, sgn * r * 0.9f, r * 0.55f) }, 0.4f, 5);
-			B.Cylinder(SAccent, TP + FVector(r * 1.4f, 0, r * 1.15f), FVector(0, 0, 1), r * 0.32f, r * 0.8f, 14, true);
+			B.Cylinder(SAccent, TP + FVector(r * 1.4f, 0, r * 1.15f), FVector(0, 0, 1), r * 0.32f, tb >= 2.2f ? r * 1.7f : r * 0.8f, 14, true);
+			if (tb >= 2.2f) for (int32 hw = 0; hw < 3; ++hw) B.Torus(SCarbon, TP + FVector(-r * (1.0f + hw * 0.55f), 0, 0), FVector(1, 0, 0), r * 0.62f, r * 0.20f, 18, 6);   // fundas térmicas
 			// líneas de aceite
 			B.Tube(SChrome, FDustlineMeshBuilder::Smooth({ TP + FVector(-r * 0.1f, 0, r * 0.52f), TP + FVector(-r * 0.3f, -sgn * r * 0.6f, r * 1.6f), FVector(Org.X, Org.Y + sgn * bore * 1.3f, Org.Z + bore * 0.2f) }, 5), 0.45f, 5);
 			// tubos: colector -> turbina; compresor -> intercooler -> admisión
@@ -329,6 +381,13 @@ void ADustlineCar::BuildEngine()
 			B.TubeVar(STurbo, FDustlineMeshBuilder::Smooth({ Coll, FVector(Coll.X - r * 0.2f, TP.Y, TP.Z - r * 0.4f), TP + FVector(-r * 0.9f, 0, -r * 0.6f) }, 6), r * 0.30f, r * 0.30f, 12, true);
 			B.TubeVar(SHose, FDustlineMeshBuilder::Smooth({ TP + FVector(r * 1.05f, 0, r * 0.82f), FVector(xr + 6.f, sgn * (icw * 0.9f), zi + ich + 8.f), FVector(xi, sgn * (icw + 6.f), zi + (sgn > 0 ? 5.f : -5.f)) }, 8), r * 0.28f, r * 0.28f, 12, true);
 			for (float tt : { 0.12f, 0.85f }) B.Torus(SChrome, FVector(xr + 6.f, sgn * icw * 0.9f, zi + ich + 8.f) * 0.0f + FMath::Lerp(TP + FVector(r * 1.05f, 0, r * 0.82f), FVector(xi, sgn * (icw + 6.f), zi + 5.f), tt), FVector(1, 0, 0), r * 0.30f, 0.45f, 16, 5);
+		}
+		if (tb >= 2.7f)   // botella de óxido nitroso
+		{
+			const FVector NP(Org.X - hl - 8.f, Org.Y + 36.f, Org.Z + bore * 0.4f);
+			B.Cylinder(STurbo, NP, FVector(1, 0, 0), 5.2f, 30.f, 18, true); B.Sphere(STurbo, NP + FVector(30.f, 0, 0), 5.2f, 12);
+			B.Cylinder(SChrome, NP + FVector(-3.f, 0, 0), FVector(1, 0, 0), 1.6f, 4.f, 10, true);
+			B.Tube(SChrome, FDustlineMeshBuilder::Smooth({ NP + FVector(-3.f, 0, 0), FVector(Org.X - hl - 4.f, Org.Y + 20.f, Org.Z + bore * 1.2f), FVector(xT, Org.Y + sgnIn * bore * 0.5f, zP) }, 5), 0.7f, 6);
 		}
 		B.TubeVar(SHose, FDustlineMeshBuilder::Smooth({ FVector(xi, -(icw + 6.f), zi - 5.f), FVector(xr + 10.f, -icw * 0.6f, zi + ich + 14.f), FVector(xT, Org.Y + sgnIn * bore * 0.5f, zP + 2.f) }, 8), r * 0.27f, r * 0.27f, 12, true);
 		for (int32 q = 0; q < 2; ++q) B.Torus(SChrome, FVector(xi, -(icw + 6.f), zi - 5.f) + FVector(-0.f, -q * 2.f, 0), FVector(0, 1, 0), 3.0f + 0.6f, 0.5f, 16, 5);

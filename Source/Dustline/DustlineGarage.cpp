@@ -71,7 +71,8 @@ bool Eq(float a, float b) { return FMath::IsNearlyEqual(a, b, 0.006f); }
 FString EngDesc(float cc)
 {
 	int32 cyl = FMath::Clamp(FMath::RoundToInt(cc / 650.f), 2, 12); if (cyl > 6 && (cyl % 2)) cyl += 1;
-	return FString::Printf(TEXT("%.1f L  ·  %d cilindros  ·  %.0f CV"), cc / 1000.f, cyl, cc * 0.065f);
+	const TCHAR* Rasgo = cc < 2000.f ? TEXT("Tapa de plástico lisa") : (cc < 2800.f ? TEXT("Cubierta con nervios") : (cc < 3600.f ? TEXT("Pleno pulido") : (cc < 4800.f ? TEXT("Filtro redondo clásico") : (cc < 6300.f ? TEXT("Filtro cónico rojo") : (cc < 8000.f ? TEXT("Trompetas de admisión") : TEXT("Supercargador"))))));
+	return FString::Printf(TEXT("%.1f L  ·  %d cil.  ·  %.0f CV  ·  %s"), cc / 1000.f, cyl, cc * 0.065f, Rasgo);
 }
 const TCHAR* GCatNames[] = { TEXT("Motor"), TEXT("Turbo"), TEXT("Ruedas"), TEXT("Neumáticos"), TEXT("Suspensión"), TEXT("Tracción"), TEXT("Chasis"), TEXT("Pintura") };
 
@@ -92,8 +93,8 @@ TArray<FPart> MakeParts(int32 Cat, const FDustlineModel& M)
 		const float Stock = M.Turbo;
 		Add(TEXT("Original"), Stock < 0.05f ? FString(TEXT("Sin turbo de fábrica")) : FString::Printf(TEXT("Turbo de fábrica  ·  +%.0f %% de potencia"), Stock * 50.f), [Stock](FDustlineSetup& S) { S.Turbo = Stock; }, [Stock](const FDustlineSetup& S) { return Eq(S.Turbo, Stock); });
 		struct T { const TCHAR* N; const TCHAR* D; float V; };
-		for (const T& t : { T{ TEXT("Sin turbo"), TEXT("Respuesta inmediata, menos potencia y menos peso"), 0.f }, T{ TEXT("Turbo pequeño"), TEXT("Responde pronto  ·  +30 % de potencia"), 0.6f }, T{ TEXT("Turbo medio"), TEXT("Equilibrado  ·  +60 % de potencia"), 1.2f },
-			T{ TEXT("Doble turbo"), TEXT("Empuje en todo el rango  ·  +90 % de potencia"), 1.8f }, T{ TEXT("Competición"), TEXT("Mucho retardo, mucha potencia  ·  +120 %"), 2.4f }, T{ TEXT("Extremo"), TEXT("Brutal y difícil de domar  ·  +150 %"), 3.0f } })
+		for (const T& t : { T{ TEXT("Sin turbo"), TEXT("Sin turbo ni intercooler: respuesta inmediata y menos peso"), 0.f }, T{ TEXT("Turbo pequeño"), TEXT("Un turbo compacto  ·  +30 % de potencia"), 0.6f }, T{ TEXT("Turbo medio"), TEXT("Un turbo con intercooler grande  ·  +60 %"), 1.2f },
+			T{ TEXT("Doble turbo"), TEXT("Dos turbos  ·  +90 % de potencia"), 1.8f }, T{ TEXT("Competición"), TEXT("Dos turbos grandes, compresor cromado y fundas térmicas  ·  +120 %"), 2.4f }, T{ TEXT("Extremo"), TEXT("Tres turbos y botella de nitro  ·  +150 %"), 3.0f } })
 		{ const float V = t.V; Add(t.N, t.D, [V](FDustlineSetup& S) { S.Turbo = V; }, [V](const FDustlineSetup& S) { return Eq(S.Turbo, V); }); }
 	}
 	else if (Cat == 2)
@@ -393,6 +394,25 @@ void ADustlineCar::EndPlay(const EEndPlayReason::Type Reason)
 	if (GEngine && GEngine->GameViewport && GarageWidget.IsValid()) GEngine->GameViewport->RemoveViewportWidgetContent(GarageWidget.ToSharedRef());
 	GarageWidget.Reset();
 	Super::EndPlay(Reason);
+}
+
+void ADustlineCar::EngineTest()
+{
+	// -nomenu -enginetest: cada motor (sin turbo) y cada turbo (con V8) en el taller con rayos X
+	static int32 Phase = -1; const float T = Clock - 5.f; if (T < 0.f) return;
+	const int32 N = (int32)(T / 4.f);
+	if (N != Phase)
+	{
+		Phase = N;
+		static const float CC[] = { 1600.f, 2400.f, 3200.f, 4000.f, 5700.f, 7000.f, 9000.f };
+		static const float TB[] = { 0.f, 0.6f, 1.2f, 1.8f, 2.4f, 3.0f };
+		if (N == 0) { SelectModel(3); OpenGarage(); GarageFocus = 1; SetXRay(true); }
+		if (N < 7) { Setup.EngineCC = CC[N]; Setup.Turbo = 0.f; bSetupDirty = true; }
+		else if (N < 13) { Setup.EngineCC = 4000.f; Setup.Turbo = TB[N - 7]; bSetupDirty = true; }
+		else FPlatformMisc::RequestExit(false);
+	}
+	if (Phase >= 0 && Phase < 13 && FMath::Fmod(T, 4.f) > 3.2f && FMath::Fmod(T, 4.f) < 3.3f)
+	{ static int32 Last = -1; if (Last != Phase) { Last = Phase; FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("/Volumes/SSD/UE-Cache/en_%02d.png"), Phase), false, false); } }
 }
 
 void ADustlineCar::WheelTest()

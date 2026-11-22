@@ -111,6 +111,7 @@ private:
 	void UpdateGarageCamera(float Dt);
 	void UiDemo();
 	void WheelTest();
+	void EngineTest();
 public:
 	// animaciones de montaje de piezas: la pieza vieja sale, se cambia la malla y la nueva entra
 	enum class ESwap : uint8 { Idle, Out, In };

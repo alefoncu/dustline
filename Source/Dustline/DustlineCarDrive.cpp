@@ -287,6 +287,7 @@ void ADustlineCar::Tick(float DeltaTime)
 	else if (PC && PC->WasInputKeyJustPressed(EKeys::G)) ToggleGarage();
 	if (FParse::Param(FCommandLine::Get(), TEXT("uidemo"))) UiDemo();
 	if (FParse::Param(FCommandLine::Get(), TEXT("wheeltest"))) WheelTest();
+	if (FParse::Param(FCommandLine::Get(), TEXT("enginetest"))) EngineTest();
 	if (bSetupDirty && Clock - LastRebuild > 0.04f) { bSetupDirty = false; LastRebuild = Clock; if (!NoteSetupChange()) Rebuild(); }
 	StepAnims(dt);
 	if (bGarage || bShowcase)
