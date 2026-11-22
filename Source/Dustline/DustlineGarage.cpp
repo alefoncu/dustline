@@ -497,9 +497,10 @@ void ADustlineCar::UpdateGarageCamera(float Dt)
 	default:
 	{
 		GarageOrbit += Dt * 0.25f * OrbitSpeed;
-		const float d = M.L * 1.05f + 360.f;
+		static const float Zoom = [] { float z = 1.f; FParse::Value(FCommandLine::Get(), TEXT("camzoom="), z); return FMath::Clamp(z, 0.3f, 2.f); }();
+		const float d = (M.L * 1.05f + 360.f) * Zoom;
 		Tgt = W(FVector(0, 0, M.H * 0.45f));
-		Pos = W(FVector(FMath::Cos(GarageOrbit) * d, FMath::Sin(GarageOrbit) * d, M.H * 0.55f + 120.f));
+		Pos = W(FVector(FMath::Cos(GarageOrbit) * d, FMath::Sin(GarageOrbit) * d, M.H * 0.55f + 120.f * Zoom));
 		break;
 	}
 	}

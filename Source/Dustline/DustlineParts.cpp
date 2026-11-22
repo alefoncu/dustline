@@ -325,7 +325,7 @@ void ADustlineCar::BuildEngine()
 	Belt.Add(FVector(xb, -bore * 1.1f - bore * 0.42f, Org.Z + bore * 0.5f)); Belt.Add(FVector(xb, -bore * 0.7f, Org.Z - bore * 0.5f)); { const FVector B0 = Belt[0]; Belt.Add(B0); }
 	B.Tube(SDark, FDustlineMeshBuilder::Smooth(Belt, 5), 0.9f, 6);
 	// radiador, ventilador, mangueras, batería
-	const float xr = xFront + (GetModel(Setup.Model).L * 0.5f - xFront) - 30.f;
+	const float xr = BodyFront() - (Setup.Turbo > 0.05f ? 46.f : 30.f);
 	const float rw = M.W * 0.27f, rz = gc + 0.24f * (zTopHood - gc) + 12.f;
 	B.Box(SDark, FVector(xr, 0, rz), FVector(3.2f, rw, 15.f));
 	for (int32 i = -9; i <= 9; ++i) B.Box(SAlu, FVector(xr + 3.4f, i * rw / 9.5f, rz), FVector(0.25f, 0.3f, 14.5f));

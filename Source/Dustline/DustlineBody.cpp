@@ -82,7 +82,8 @@ void ADustlineCar::BuildBody()
 	}
 	KBody->SetStaticMesh(nullptr);
 	FDustlineMeshBuilder B;
-	if (GetModel(Setup.Model).Style == 4) BuildBuggyBody(B); else BuildShell(B);
+	const int32 St = GetModel(Setup.Model).Style;
+	if (St == 4) BuildBuggyBody(B); else BuildShellV2(B);
 	B.Build(Body, Mats, false);
 }
 

@@ -128,7 +128,7 @@ private:
 	FString GarageReadout() const;
 	FString LogLine; float LogT = 0.f; float FpsAcc = 0.f; int32 FpsN = 0;
 	void BuildBody(); void BuildWheels(); void BuildSuspension(); void BuildEngine();
-	void BuildShell(FDustlineMeshBuilder& B); void BuildBuggyBody(FDustlineMeshBuilder& B);
+	void BuildShell(FDustlineMeshBuilder& B); void BuildShellV2(FDustlineMeshBuilder& B); void BuildBuggyBody(FDustlineMeshBuilder& B);
 	float BodyH() const; void BuildBodyKen();
 	UMaterialInstanceDynamic* MakeMat(const TCHAR* BasePath, const FLinearColor& Color, float Metallic, float Roughness);
 	TMap<int32, UMaterialInterface*> Mats;
