@@ -21,9 +21,9 @@ static const int32 GKenIdx[] = { 0, 1, 2, 6, 5, 3, 4 };
 
 
 static const FDustlineModel GModels[] = {
-	{ TEXT("Clase G"),          0, 466, 188, 197, 289, 2450, 4000, 1.0f, 0.40f, 0.285f, 0.55f, 1.1f, 1, 0, { FLinearColor(0.50f,0.52f,0.55f), FLinearColor(0.02f,0.02f,0.025f), FLinearColor(0.03f,0.17f,0.07f) } },
-	{ TEXT("Urus"),             1, 511, 204, 164, 300, 2200, 4000, 1.6f, 0.41f, 0.325f, 0.42f, 1.5f, 1, 0, { FLinearColor(0.95f,0.62f,0.02f), FLinearColor(0.70f,0.03f,0.02f), FLinearColor(0.02f,0.02f,0.03f) } },
-	{ TEXT("Panda 4x4"),        2, 368, 164, 158, 230,  980,  900, 0.0f, 0.32f, 0.185f, 0.42f, 0.8f, 1, 0, { FLinearColor(0.85f,0.85f,0.82f), FLinearColor(0.60f,0.03f,0.03f), FLinearColor(0.03f,0.15f,0.45f) } },
+	{ TEXT("Clase G"),          0, 466, 188, 197, 289, 2450, 4000, 1.0f, 0.40f, 0.285f, 0.55f, 1.1f, 1, 0, { FLinearColor(0.28f,0.29f,0.31f), FLinearColor(0.02f,0.02f,0.025f), FLinearColor(0.03f,0.17f,0.07f) } },
+	{ TEXT("Urus"),             1, 511, 204, 164, 300, 2200, 4000, 1.6f, 0.41f, 0.325f, 0.42f, 1.5f, 1, 0, { FLinearColor(0.62f,0.34f,0.008f), FLinearColor(0.55f,0.025f,0.015f), FLinearColor(0.02f,0.02f,0.03f) } },
+	{ TEXT("Panda 4x4"),        2, 368, 164, 158, 230,  980,  900, 0.0f, 0.32f, 0.185f, 0.42f, 0.8f, 1, 0, { FLinearColor(0.60f,0.60f,0.58f), FLinearColor(0.50f,0.025f,0.025f), FLinearColor(0.03f,0.15f,0.45f) } },
 	{ TEXT("Defender cl\u00E1sico"), 3, 440, 179, 200, 279, 1850, 2500, 0.6f, 0.42f, 0.235f, 0.62f, 0.9f, 1, 0, { FLinearColor(0.07f,0.12f,0.04f), FLinearColor(0.60f,0.55f,0.40f), FLinearColor(0.32f,0.03f,0.02f) } },
 	{ TEXT("Buggy"),            4, 335, 185, 172, 255,  780, 1600, 1.0f, 0.40f, 0.270f, 0.80f, 0.85f, 1, 0, { FLinearColor(0.95f,0.68f,0.01f), FLinearColor(0.55f,0.45f,0.30f), FLinearColor(0.75f,0.03f,0.02f) } },
 	{ TEXT("Pick-up 4x4"),      5, 530, 186, 185, 310, 2050, 2800, 1.0f, 0.44f, 0.265f, 0.60f, 1.0f, 1, 0, { FLinearColor(0.02f,0.07f,0.30f), FLinearColor(0.60f,0.60f,0.60f), FLinearColor(0.30f,0.02f,0.02f) } },

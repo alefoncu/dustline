@@ -542,7 +542,8 @@ void ADustlineCar::BuildWheels()
 	for (int32 i = 0; i < 4; ++i)
 	{
 		FDustlineMeshBuilder B;
-		DustlineAddWheel(B, R, Wd, Setup.TireType, (i % 2) == 0 ? -1.f : 1.f);
+		const float RimK = (GetModel(Setup.Model).Style == 1 && Setup.TireType <= 1 && Setup.TireRadiusM < 0.5f) ? 0.72f : 0.f;   // Urus: llanta de 23" y perfil bajo
+		DustlineAddWheel(B, R, Wd, Setup.TireType, (i % 2) == 0 ? -1.f : 1.f, true, RimK);
 		B.Build(Wheels[i], Mats, false);
 		Wheels[i]->SetRelativeLocation(WheelPos(i));
 	}

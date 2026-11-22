@@ -6,11 +6,11 @@
 static FVector2D P2(float a, float r) { return FVector2D(a, r); }
 
 // ---------------------------------------------------------------- rueda completa
-void DustlineAddWheel(FDustlineMeshBuilder& B, float R, float Wd, int32 Type, float Side, bool bBrake)
+void DustlineAddWheel(FDustlineMeshBuilder& B, float R, float Wd, int32 Type, float Side, bool bBrake, float RimK)
 {
 	const FVector Ax(0, 1, 0);
 	const FTransform Keep = B.Xf;
-	const float Rr = R * (Type == 4 ? 0.50f : (Type == 2 ? 0.52f : 0.60f));     // radio de llanta
+	const float Rr = R * (RimK > 0.f ? RimK : (Type == 4 ? 0.50f : (Type == 2 ? 0.52f : 0.60f)));     // radio de llanta
 	const float Bulge = (Type == 4) ? 1.10f : (Type == 0 ? 0.97f : 1.0f);
 	auto Mir = [&](TArray<FVector2D> Half) { TArray<FVector2D> Out; for (int32 i = 0; i < Half.Num(); ++i) Out.Add(Half[i]); for (int32 i = Half.Num() - 1; i >= 0; --i) Out.Add(FVector2D(-Half[i].X, Half[i].Y)); return Out; };
 
