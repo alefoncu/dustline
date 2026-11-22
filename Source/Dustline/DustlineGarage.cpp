@@ -101,7 +101,7 @@ TArray<FPart> MakeParts(int32 Cat, const FDustlineModel& M)
 		const float R = M.Radius, W = M.Width;
 		Add(TEXT("Originales"), FString::Printf(TEXT("De fábrica  ·  %.0f cm de radio  ·  %.0f cm de ancho"), R * 100.f, W * 100.f), [R, W](FDustlineSetup& S) { S.TireRadiusM = R; S.TireWidthM = W; }, [R, W](const FDustlineSetup& S) { return Eq(S.TireRadiusM, R) && Eq(S.TireWidthM, W); });
 		struct Wh { const TCHAR* N; float R, W; };
-		for (const Wh& w : { Wh{ TEXT("Urbanas 15\""), 0.33f, 0.22f }, Wh{ TEXT("Estándar 17\""), 0.40f, 0.28f }, Wh{ TEXT("Todoterreno 33\""), 0.44f, 0.31f }, Wh{ TEXT("Grandes 35\""), 0.49f, 0.35f }, Wh{ TEXT("Monster 40\""), 0.57f, 0.40f }, Wh{ TEXT("Gigantes 44\""), 0.68f, 0.47f } })
+		for (const Wh& w : { Wh{ TEXT("Urbanas 15\""), 0.33f, 0.22f }, Wh{ TEXT("Estándar 17\""), 0.40f, 0.28f }, Wh{ TEXT("Todoterreno 33\""), 0.42f, 0.29f }, Wh{ TEXT("Grandes 35\""), 0.445f, 0.31f }, Wh{ TEXT("Monster 40\""), 0.51f, 0.35f }, Wh{ TEXT("Gigantes 44\""), 0.56f, 0.38f } })
 		{ const float r = w.R, wd = w.W; Add(w.N, FString::Printf(TEXT("%.0f cm de radio  ·  %.0f cm de ancho"), r * 100.f, wd * 100.f), [r, wd](FDustlineSetup& S) { S.TireRadiusM = r; S.TireWidthM = wd; }, [r, wd](const FDustlineSetup& S) { return Eq(S.TireRadiusM, r) && Eq(S.TireWidthM, wd); }); }
 	}
 	else if (Cat == 3)
@@ -340,6 +340,9 @@ void ADustlineCar::StepAnims(float Dt)
 		if (SwWheels.S == ESwap::In || SwSusp.S == ESwap::In || SwModel.S == ESwap::In) BounceT = -0.40f;
 	}
 	AnimPaint = FMath::Min(1.f, AnimPaint + Dt / 0.45f); BounceT += Dt;
+	{
+		const float Tg = bXRay ? 1.f : 0.f; XLift += (Tg - XLift) * (1.f - FMath::Exp(-7.f * Dt)); if (FMath::Abs(Tg - XLift) < 0.003f) XLift = Tg;
+	}
 }
 void ADustlineCar::ApplyAnims()
 {
@@ -357,6 +360,13 @@ void ADustlineCar::ApplyAnims()
 		FVector L = W->GetRelativeLocation(); const float Side = L.Y >= 0.f ? 1.f : -1.f;
 		L.Y += Side * Reach * D; L.Z += 18.f * FMath::Sin(PI * FMath::Clamp(D, 0.f, 1.f));
 		W->SetRelativeLocationAndRotation(L, W->GetRelativeRotation().Quaternion() * FQuat(FVector(0, 1, 0), D * 4.5f * -Side));
+	}
+	// rayos X: la carrocería se eleva y se oculta (sin transparencia punteada)
+	{
+		const float Lift = FMath::SmoothStep(0.f, 1.f, XLift) * 280.f; const bool bVis = XLift < 0.96f;
+		if (bXRay || XLift > 0.f) for (const TPair<int32, UMaterialInterface*>& KV : Mats) if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(KV.Value)) MI->SetScalarParameterValue(TEXT("Fade"), 1.f);
+		if (Body) { Body->SetRelativeLocation(FVector(0.f, 0.f, Lift)); Body->SetVisibility(bVis); }
+		if (KBody) { KBody->SetRelativeLocation(FVector(0.f, 0.f, KBodyZ + Lift)); KBody->SetVisibility(bVis); }
 	}
 	if (AnimPaint < 1.f || PaintShown != Setup.Paint)
 	{
@@ -383,6 +393,22 @@ void ADustlineCar::EndPlay(const EEndPlayReason::Type Reason)
 	if (GEngine && GEngine->GameViewport && GarageWidget.IsValid()) GEngine->GameViewport->RemoveViewportWidgetContent(GarageWidget.ToSharedRef());
 	GarageWidget.Reset();
 	Super::EndPlay(Reason);
+}
+
+void ADustlineCar::WheelTest()
+{
+	// -nomenu -wheeltest: cada modelo con ruedas de 44" (vista trasera y vista orbital)
+	static int32 Phase = 0; const float T = Clock - 5.f; if (T < 0.f) return;
+	const int32 Mi = (int32)(T / 9.f), Ph = (int32)(FMath::Fmod(T, 9.f) * 10.f);
+	if (Mi >= NumModels()) { FPlatformMisc::RequestExit(false); return; }
+	auto Shot = [&](const TCHAR* Tag) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("/Volumes/SSD/UE-Cache/wt_%d_%s.png"), Mi, Tag), false, false); };
+	if (Phase != Mi * 100 + Ph / 10) { Phase = Mi * 100 + Ph / 10;
+		const int32 S = Ph / 10;
+		if (S == 0) { ExitShowcase(); SelectModel(Mi); Setup.TireRadiusM = 0.56f; Setup.TireWidthM = 0.38f; bSetupDirty = true; }
+		else if (S == 4) Shot(TEXT("rear"));
+		else if (S == 5) EnterShowcase();
+		else if (S == 8) Shot(TEXT("orbit"));
+	}
 }
 
 void ADustlineCar::UiDemo()

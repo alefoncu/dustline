@@ -110,12 +110,13 @@ private:
 	TSharedRef<class SWidget> BuildGarageWidget();
 	void UpdateGarageCamera(float Dt);
 	void UiDemo();
+	void WheelTest();
 public:
 	// animaciones de montaje de piezas: la pieza vieja sale, se cambia la malla y la nueva entra
 	enum class ESwap : uint8 { Idle, Out, In };
 	struct FSwap { ESwap S = ESwap::Idle; float T = 0.f, D0 = 0.f, D = 0.f, Stag = 0.f; };
 	FSwap SwEngine, SwWheels, SwSusp, SwModel; bool bRebuildPending = false;
-	float AnimPaint = 1.f, BounceT = 9.f;
+	float AnimPaint = 1.f, BounceT = 9.f, XLift = 0.f;
 	FLinearColor PaintFrom = FLinearColor::Black, PaintShown = FLinearColor::Black;
 	FDustlineSetup LastSetup; bool bHaveLast = false;
 	bool NoteSetupChange();   // true = la reconstrucción queda aplazada hasta que salgan las piezas viejas

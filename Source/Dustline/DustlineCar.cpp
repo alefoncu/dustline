@@ -90,7 +90,10 @@ FVector ADustlineCar::WheelPos(int32 I) const
 	const FDustlineModel& M = GetModel(Setup.Model);
 	if (bKen) { const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, 6)]]; return FVector((I < 2 ? K.FrontY : K.BackY) * KSy, ((I % 2) == 0 ? -1.f : 1.f) * K.ArchX * KSx, Setup.TireRadiusM * 100.f); }
 	const float x = (I < 2 ? 1.f : -1.f) * M.Wheelbase * 0.5f;
-	const float y = ((I % 2) == 0 ? -1.f : 1.f) * (M.W * 0.5f - Setup.TireWidthM * 50.f + 6.f);
+	// neumáticos grandes: se ensancha la vía (ruedas hacia fuera) en vez de estrechar la carrocería
+	const float Wd = Setup.TireWidthM * 100.f, Rc = Setup.TireRadiusM * 100.f, Tw = FMath::SmoothStep(40.f, 50.f, Rc);
+	const float yStock = M.W * 0.5f - Wd * 0.5f + 6.f, yWide = M.W * 0.5f + 2.f + Wd * 0.5f;
+	const float y = ((I % 2) == 0 ? -1.f : 1.f) * FMath::Lerp(yStock, FMath::Max(yStock, yWide), Tw);
 	return FVector(x, y, Setup.TireRadiusM * 100.f);
 }
 
