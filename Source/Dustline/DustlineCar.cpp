@@ -25,7 +25,7 @@ static const FDustlineModel GModels[] = {
 	{ TEXT("Urus"),             1, 510, 202, 164, 300, 2200, 4000, 1.6f, 0.41f, 0.325f, 0.42f, 1.5f, 1, 0, { FLinearColor(0.95f,0.62f,0.02f), FLinearColor(0.70f,0.03f,0.02f), FLinearColor(0.02f,0.02f,0.03f) } },
 	{ TEXT("Panda 4x4"),        2, 370, 165, 156, 230,  980,  900, 0.0f, 0.32f, 0.185f, 0.42f, 0.8f, 1, 0, { FLinearColor(0.85f,0.85f,0.82f), FLinearColor(0.60f,0.03f,0.03f), FLinearColor(0.03f,0.15f,0.45f) } },
 	{ TEXT("Defender cl\u00E1sico"), 3, 440, 180, 200, 279, 1850, 2500, 0.6f, 0.42f, 0.235f, 0.62f, 0.9f, 1, 0, { FLinearColor(0.07f,0.12f,0.04f), FLinearColor(0.60f,0.55f,0.40f), FLinearColor(0.32f,0.03f,0.02f) } },
-	{ TEXT("Buggy"),            4, 330, 190, 135, 220,  720, 1600, 1.0f, 0.48f, 0.320f, 0.82f, 0.85f, 4, 1, { FLinearColor(0.95f,0.20f,0.01f), FLinearColor(0.02f,0.30f,0.70f), FLinearColor(0.70f,0.55f,0.02f) } },
+	{ TEXT("Buggy"),            4, 335, 185, 172, 255,  780, 1600, 1.0f, 0.40f, 0.270f, 0.80f, 0.85f, 1, 0, { FLinearColor(0.95f,0.68f,0.01f), FLinearColor(0.55f,0.45f,0.30f), FLinearColor(0.75f,0.03f,0.02f) } },
 	{ TEXT("Pick-up 4x4"),      5, 530, 186, 185, 310, 2050, 2800, 1.0f, 0.44f, 0.265f, 0.60f, 1.0f, 1, 0, { FLinearColor(0.02f,0.07f,0.30f), FLinearColor(0.60f,0.60f,0.60f), FLinearColor(0.30f,0.02f,0.02f) } },
 	{ TEXT("Rock Crawler"),     6, 390, 190, 190, 250, 1500, 3500, 0.0f, 0.62f, 0.400f, 0.90f, 0.7f, 2, 0, { FLinearColor(0.70f,0.05f,0.01f), FLinearColor(0.70f,0.60f,0.02f), FLinearColor(0.05f,0.05f,0.06f) } },
 };
@@ -112,7 +112,7 @@ void ADustlineCar::RefreshMaterials()
 	const float Fade = bXRay ? 0.12f : 1.f;
 	auto Set = [&](int32 id, UMaterialInstanceDynamic* M) { if (M) Mats.Add(id, M); };
 	UMaterialInstanceDynamic* Paint = MakeMat(G, Setup.Paint, 0.30f, 0.34f); if (Paint) Paint->SetScalarParameterValue(TEXT("Fade"), Fade);
-	UMaterialInstanceDynamic* Glass = MakeMat(G, FLinearColor(0.012f, 0.018f, 0.026f), 0.85f, 0.07f); if (Glass) Glass->SetScalarParameterValue(TEXT("Fade"), bXRay ? 0.08f : 1.f);
+	UMaterialInstanceDynamic* Glass = MakeMat(G, FLinearColor(0.003f, 0.005f, 0.008f), 0.25f, 0.30f); if (Glass) Glass->SetScalarParameterValue(TEXT("Fade"), bXRay ? 0.08f : 1.f);
 	UMaterialInstanceDynamic* Dark = MakeMat(G, FLinearColor(0.014f, 0.014f, 0.016f), 0.15f, 0.62f); if (Dark && bXRay) Dark->SetScalarParameterValue(TEXT("Fade"), 0.3f);
 	Set(SPaint, Paint); Set(SGlass, Glass); Set(SDark, Dark);
 	if (UMaterialInstanceDynamic* Mt = MakeMat(G, FLinearColor(0.30f, 0.30f, 0.32f), 1.0f, 0.34f)) { Mt->SetScalarParameterValue(TEXT("Emissive"), bXRay ? 0.07f : 0.f); Set(SMetal, Mt); }

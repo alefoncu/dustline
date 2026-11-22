@@ -288,6 +288,7 @@ void ADustlineCar::Tick(float DeltaTime)
 	if (FParse::Param(FCommandLine::Get(), TEXT("uidemo"))) UiDemo();
 	if (FParse::Param(FCommandLine::Get(), TEXT("wheeltest"))) WheelTest();
 	if (FParse::Param(FCommandLine::Get(), TEXT("enginetest"))) EngineTest();
+	if (FParse::Param(FCommandLine::Get(), TEXT("bodytest"))) BodyTest();
 	if (bSetupDirty && Clock - LastRebuild > 0.04f) { bSetupDirty = false; LastRebuild = Clock; if (!NoteSetupChange()) Rebuild(); }
 	StepAnims(dt);
 	if (bGarage || bShowcase)

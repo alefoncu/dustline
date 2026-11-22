@@ -105,13 +105,14 @@ private:
 	void UpdateVisuals(float Throttle);
 	void UpdateCamera(float Dt);
 	TSharedPtr<class SWidget> GarageWidget;
-	bool bSetupDirty = false; float LastRebuild = -1.f; int32 GarageFocus = 0; float GarageOrbit = 0.5f;
+	bool bSetupDirty = false; float LastRebuild = -1.f; int32 GarageFocus = 0; float GarageOrbit = 0.5f; float OrbitSpeed = 1.f;
 	FVector GarageCamPos = FVector::ZeroVector, GarageCamTgt = FVector::ZeroVector; bool bGarageCamInit = false;
 	TSharedRef<class SWidget> BuildGarageWidget();
 	void UpdateGarageCamera(float Dt);
 	void UiDemo();
 	void WheelTest();
 	void EngineTest();
+	void BodyTest();
 public:
 	// animaciones de montaje de piezas: la pieza vieja sale, se cambia la malla y la nueva entra
 	enum class ESwap : uint8 { Idle, Out, In };

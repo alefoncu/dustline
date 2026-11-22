@@ -396,6 +396,25 @@ void ADustlineCar::EndPlay(const EEndPlayReason::Type Reason)
 	Super::EndPlay(Reason);
 }
 
+void ADustlineCar::BodyTest()
+{
+	// -nomenu -bodytest: cada modelo de serie desde 4 ángulos (3/4 delantero, lateral, frontal, 3/4 trasero)
+	static int32 Phase = -1; const float T = Clock - 5.f; if (T < 0.f) return;
+	int32 BM = -1; FParse::Value(FCommandLine::Get(), TEXT("bodymodel="), BM);
+	const float Per = 14.f; const int32 Mi = BM >= 0 ? BM : (int32)(T / Per); const float Lt = FMath::Fmod(T, Per);
+	if (Mi >= NumModels() || (BM >= 0 && T >= Per)) { FPlatformMisc::RequestExit(false); return; }
+	static const float Ang[] = { 0.62f, 1.5708f, 0.f, 2.5f };
+	static const TCHAR* Tag[] = { TEXT("f34"), TEXT("side"), TEXT("front"), TEXT("r34") };
+	const int32 Step = (int32)(Lt / 3.5f); const float St = FMath::Fmod(Lt, 3.5f);
+	if (Phase != Mi * 10 + Step)
+	{
+		Phase = Mi * 10 + Step;
+		if (Step == 0) { SelectModel(Mi); Setup = StockSetup(Mi); bSetupDirty = true; if (!bShowcase) EnterShowcase(); OrbitSpeed = 0.f; }
+		GarageOrbit = Ang[Step];
+	}
+	if (St > 2.7f && St < 2.8f) { static int32 Last = -1; if (Last != Phase) { Last = Phase; FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("/Volumes/SSD/UE-Cache/bd_%d_%s.png"), Mi, Tag[Step]), false, false); } }
+}
+
 void ADustlineCar::EngineTest()
 {
 	// -nomenu -enginetest: cada motor (sin turbo) y cada turbo (con V8) en el taller con rayos X
@@ -477,7 +496,7 @@ void ADustlineCar::UpdateGarageCamera(float Dt)
 	case 3: { const FVector WP = WheelPos(0); Tgt = W(FVector(WP.X, WP.Y * 0.6f, gc * 0.5f)); Pos = W(FVector(WP.X + 70.f, -330.f, gc * 0.5f + 20.f)); break; }
 	default:
 	{
-		GarageOrbit += Dt * 0.25f;
+		GarageOrbit += Dt * 0.25f * OrbitSpeed;
 		const float d = M.L * 1.05f + 360.f;
 		Tgt = W(FVector(0, 0, M.H * 0.45f));
 		Pos = W(FVector(FMath::Cos(GarageOrbit) * d, FMath::Sin(GarageOrbit) * d, M.H * 0.55f + 120.f));
