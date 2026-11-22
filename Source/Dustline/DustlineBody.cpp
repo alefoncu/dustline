@@ -15,6 +15,7 @@ namespace
 		TArray<float> Gaps;         // juntas de puertas (u)
 		float Belt = 0.6f, CabIn = 0.9f, RoofIn = 0.82f, Crown = 2.f, RoofCrown = 2.f, Round = 3.f, SmoothDeg = 30.f, TaperF = 0.04f, TaperR = 0.03f;
 		bool bSmoothOutline = false;
+		TArray<FVector2D> BeltPts;   // (u, v) cintura variable (opcional)
 	};
 
 	FBodyDef MakeDef(int32 St)
@@ -26,18 +27,19 @@ namespace
 			D.Top = { FVector2D(0, 0.93), FVector2D(0.012, 0.99), FVector2D(0.04, 1.0), FVector2D(0.68, 1.0), FVector2D(0.695, 0.985), FVector2D(0.745, 0.625), FVector2D(0.757, 0.592), FVector2D(0.80, 0.58), FVector2D(0.955, 0.575), FVector2D(0.985, 0.555), FVector2D(1.0, 0.50) };
 			D.Win = { FVector2D(0.445, 0.655), FVector2D(0.215, 0.425), FVector2D(0.07, 0.195) }; D.Gaps = { 0.675f, 0.435f, 0.205f };
 			D.Belt = 0.635f; D.CabIn = 0.93f; D.RoofIn = 0.90f; D.Crown = 1.2f; D.RoofCrown = 1.5f; D.Round = 2.4f; D.SmoothDeg = 20.f; D.TaperF = 0.02f; D.TaperR = 0.f; break;
-		case 1: // Urus
-			D.Top = { FVector2D(0, 0.46), FVector2D(0.012, 0.56), FVector2D(0.05, 0.68), FVector2D(0.11, 0.84), FVector2D(0.20, 0.97), FVector2D(0.30, 1.0), FVector2D(0.46, 1.0), FVector2D(0.56, 0.985), FVector2D(0.64, 0.93), FVector2D(0.70, 0.78), FVector2D(0.735, 0.665), FVector2D(0.76, 0.63), FVector2D(0.83, 0.605), FVector2D(0.92, 0.575), FVector2D(0.975, 0.52), FVector2D(1.0, 0.40) };
-			D.Win = { FVector2D(0.43, 0.67), FVector2D(0.255, 0.415), FVector2D(0.17, 0.24) }; D.Gaps = { 0.675f, 0.42f, 0.245f };
-			D.Belt = 0.60f; D.CabIn = 0.86f; D.RoofIn = 0.72f; D.Crown = 5.f; D.RoofCrown = 5.f; D.Round = 7.f; D.SmoothDeg = 70.f; D.TaperF = 0.09f; D.TaperR = 0.08f; D.bSmoothOutline = true; break;
-		case 2: // Panda 4x4
-			D.Top = { FVector2D(0, 0.66), FVector2D(0.015, 0.92), FVector2D(0.05, 1.0), FVector2D(0.60, 1.0), FVector2D(0.625, 0.985), FVector2D(0.70, 0.65), FVector2D(0.725, 0.60), FVector2D(0.77, 0.58), FVector2D(0.955, 0.55), FVector2D(0.985, 0.52), FVector2D(1.0, 0.40) };
-			D.Win = { FVector2D(0.385, 0.60), FVector2D(0.14, 0.345) }; D.Gaps = { 0.61f, 0.365f, 0.125f };
-			D.Belt = 0.60f; D.CabIn = 0.90f; D.RoofIn = 0.82f; D.Crown = 4.f; D.RoofCrown = 3.f; D.Round = 5.f; D.SmoothDeg = 40.f; D.TaperF = 0.05f; D.TaperR = 0.04f; break;
+		case 1: // Urus: morro bajo, parabrisas muy inclinado, techo de coupé y cola alta
+			D.Top = { FVector2D(0, 0.74), FVector2D(0.015, 0.80), FVector2D(0.05, 0.84), FVector2D(0.11, 0.875), FVector2D(0.19, 0.93), FVector2D(0.27, 0.975), FVector2D(0.34, 1.0), FVector2D(0.47, 1.0), FVector2D(0.55, 0.985), FVector2D(0.61, 0.93), FVector2D(0.665, 0.80), FVector2D(0.715, 0.655), FVector2D(0.745, 0.605), FVector2D(0.80, 0.585), FVector2D(0.90, 0.53), FVector2D(0.96, 0.45), FVector2D(0.99, 0.39), FVector2D(1.0, 0.35) };
+			D.BeltPts = { FVector2D(0, 0.74), FVector2D(0.30, 0.69), FVector2D(0.70, 0.61), FVector2D(1.0, 0.53) };
+			D.Win = { FVector2D(0.46, 0.665), FVector2D(0.30, 0.445), FVector2D(0.205, 0.285) }; D.Gaps = { 0.675f, 0.455f, 0.29f };
+			D.Belt = 0.74f; D.CabIn = 0.88f; D.RoofIn = 0.70f; D.Crown = 5.f; D.RoofCrown = 5.f; D.Round = 7.f; D.SmoothDeg = 70.f; D.TaperF = 0.10f; D.TaperR = 0.07f; D.bSmoothOutline = true; break;
+		case 2: // Panda 4x4: alto, corto y cuadrado-redondeado
+			D.Top = { FVector2D(0, 0.62), FVector2D(0.012, 0.90), FVector2D(0.05, 1.0), FVector2D(0.62, 1.0), FVector2D(0.665, 0.975), FVector2D(0.765, 0.64), FVector2D(0.79, 0.605), FVector2D(0.84, 0.595), FVector2D(0.965, 0.58), FVector2D(0.992, 0.55), FVector2D(1.0, 0.44) };
+			D.Win = { FVector2D(0.455, 0.745), FVector2D(0.195, 0.435), FVector2D(0.115, 0.18) }; D.Gaps = { 0.75f, 0.445f, 0.19f };
+			D.Belt = 0.62f; D.CabIn = 0.90f; D.RoofIn = 0.84f; D.Crown = 3.f; D.RoofCrown = 3.f; D.Round = 7.f; D.SmoothDeg = 45.f; D.TaperF = 0.04f; D.TaperR = 0.03f; break;
 		case 3: // Defender clásico
-			D.Top = { FVector2D(0, 0.92), FVector2D(0.01, 0.985), FVector2D(0.03, 1.0), FVector2D(0.69, 1.0), FVector2D(0.70, 0.985), FVector2D(0.725, 0.62), FVector2D(0.735, 0.585), FVector2D(0.76, 0.58), FVector2D(0.965, 0.575), FVector2D(0.985, 0.56), FVector2D(1.0, 0.44) };
+			D.Top = { FVector2D(0, 0.92), FVector2D(0.008, 0.99), FVector2D(0.02, 1.0), FVector2D(0.685, 1.0), FVector2D(0.695, 0.99), FVector2D(0.722, 0.635), FVector2D(0.734, 0.595), FVector2D(0.765, 0.585), FVector2D(0.988, 0.58), FVector2D(0.996, 0.565), FVector2D(1.0, 0.50) };
 			D.Win = { FVector2D(0.455, 0.665), FVector2D(0.265, 0.435), FVector2D(0.075, 0.215) }; D.Gaps = { 0.67f, 0.445f, 0.235f };
-			D.Belt = 0.62f; D.CabIn = 0.93f; D.RoofIn = 0.90f; D.Crown = 0.f; D.RoofCrown = 0.5f; D.Round = 2.f; D.SmoothDeg = 18.f; D.TaperF = 0.01f; D.TaperR = 0.f; break;
+			D.Belt = 0.62f; D.CabIn = 0.97f; D.RoofIn = 0.95f; D.Crown = 0.f; D.RoofCrown = 0.4f; D.Round = 1.6f; D.SmoothDeg = 18.f; D.TaperF = 0.01f; D.TaperR = 0.f; break;
 		case 5: // Pick-up
 			D.Top = { FVector2D(0, 0.54), FVector2D(0.01, 0.56), FVector2D(0.335, 0.56), FVector2D(0.35, 0.62), FVector2D(0.358, 0.96), FVector2D(0.385, 1.0), FVector2D(0.64, 1.0), FVector2D(0.665, 0.985), FVector2D(0.74, 0.62), FVector2D(0.76, 0.595), FVector2D(0.80, 0.585), FVector2D(0.965, 0.575), FVector2D(0.99, 0.55), FVector2D(1.0, 0.46) };
 			D.Win = { FVector2D(0.50, 0.655), FVector2D(0.385, 0.485) }; D.Gaps = { 0.67f, 0.49f, 0.37f };
@@ -106,6 +108,7 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 	}
 	auto ZTopAt = [&](float u) { return gc + TopV(Top, u) * Hh; };
 	const float zBeltMax = gc + D.Belt * Hh;
+	auto BeltAt = [&](float u) { return gc + (D.BeltPts.Num() ? TopV(D.BeltPts, u) : D.Belt) * Hh; };
 	auto WAt = [&](float u) { return w0 * (1.f - D.TaperF * Sm((u - 0.88f) / 0.12f) - D.TaperR * Sm((0.12f - u) / 0.12f)); };
 
 	// ---- cortes en u
@@ -126,7 +129,7 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 	for (int32 i = 0; i <= NS; ++i)
 	{
 		const float u = Us[i], x = (u - 0.5f) * L, w = WAt(u);
-		const float zTop = ZTopAt(u), zbelt = FMath::Min(zTop, zBeltMax), zb = gc;
+		const float zTop = ZTopAt(u), zbelt = FMath::Min(zTop, BeltAt(u)), zb = gc;
 		const float hc = zTop - zbelt, k = FMath::Clamp(hc / 12.f, 0.f, 1.f);
 		Kc[i] = k; ZT[i] = zTop;
 		float za = zb;
@@ -199,7 +202,7 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 	// ---------------------------------------------------------------- detalles
 	const float xF = 0.5f * L, xB = -0.5f * L;
 	auto WA = [&](float u) { return WAt(u); };
-	auto ZB = [&](float u) { return FMath::Min(ZTopAt(u), zBeltMax); };
+	auto ZB = [&](float u) { return FMath::Min(ZTopAt(u), BeltAt(u)); };
 	const float wF = WA(1.f), wB = WA(0.f), zTopF = ZTopAt(1.f), zTopB = ZTopAt(0.f);
 	const bool bOpen = (St == 6);
 	const FTransform Keep0 = B.Xf;
@@ -267,7 +270,12 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 		B.Box(SDark, FVector(xF + 0.4f, 0, zTopF - 19.f), FVector(1.f, wF * 0.40f, 12.5f));                         // parrilla
 		for (int32 k = -2; k <= 2; ++k) B.Box(SChrome, FVector(xF + 0.9f, 0, zTopF - 19.f + k * 4.6f), FVector(0.5f, wF * 0.38f, 0.8f));
 		B.SuperBox(SChrome, FVector(xF + 1.2f, 0, zTopF - 19.f), FVector(0.7f, 5.f, 5.f), 0.6f, 8);                    // estrella
-		Round(wF * 0.72f, zTopF + 1.5f, 9.f);
+		for (int32 s = -1; s <= 1; s += 2)
+		{
+			B.SuperBox(SDark, FVector(xF - 0.6f, s * wF * 0.72f, zTopF - 3.f), FVector(1.6f, 12.f, 12.f), 0.25f, 6);       // embellecedor cuadrado
+			B.SuperBox(SDark, FVector(xF - 14.f, s * wF * 0.82f, zTopF + 2.4f), FVector(5.f, 3.2f, 1.8f), 0.4f, 6);         // intermitente sobre la aleta
+		}
+		Round(wF * 0.72f, zTopF - 3.f, 9.f);
 		B.SuperBox(SDark, FVector(xF - 2.f, 0, gc + 36.f), FVector(1.2f, wF * 0.62f, 3.f), 0.35f, 6);                  // entrada de aire
 		for (int32 s = -1; s <= 1; s += 2) { B.SuperBox(SAccent, FVector(xF - 1.f, s * wF * 0.45f, gc + 26.f), FVector(1.f, 4.f, 4.f), 0.8f, 6); B.SuperBox(SLight, FVector(xF - 0.3f, s * wF * 0.88f, zTopF - 4.f), FVector(1.2f, 3.2f, 3.2f), 0.7f, 6); }
 		Tail(wB * 0.86f, zTopB - 30.f, 5.f, 12.f); Plate(xB - 2.f, gc + 28.f, -1.f);
@@ -279,12 +287,21 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 	}
 	case 1: // Urus
 	{
-		B.SuperBox(SDark, FVector(xF - 6.f, 0, gc + 14.f), FVector(8.f, wF * 0.92f, 13.f), 0.4f, 10);
-		B.SuperBox(SCarbon, FVector(xF - 3.f, 0, gc + 8.f), FVector(7.f, wF * 0.80f, 3.f), 0.4f, 8);                    // splitter
-		B.SuperBox(SDark, FVector(xF - 1.8f, 0, gc + 20.f), FVector(1.5f, wF * 0.62f, 13.f), 0.3f, 10);                 // gran entrada central
-		for (int32 k = -4; k <= 4; ++k) B.Box(SMetal, FVector(xF - 0.5f, k * wF * 0.135f, gc + 20.f), FVector(0.4f, 0.5f, 12.f));
-		for (int32 s = -1; s <= 1; s += 2) { B.SuperBox(SDark, FVector(xF - 3.f, s * wF * 0.78f, gc + 20.f), FVector(1.5f, 15.f, 9.f), 0.3f, 8);
-			B.SuperBox(SLight, FVector(xF - 3.f, s * wF * 0.70f, zTopF - 7.f), FVector(2.f, 17.f, 3.6f), 0.4f, 8); B.SuperBox(SLight, FVector(xF - 3.f, s * wF * 0.70f, zTopF - 14.f), FVector(1.6f, 9.f, 1.6f), 0.4f, 6); }
+		B.SuperBox(SDark, FVector(xF - 6.f, 0, gc + 13.f), FVector(8.f, wF * 0.94f, 12.5f), 0.4f, 10);                 // faldón negro
+		B.SuperBox(SCarbon, FVector(xF - 4.f, 0, gc + 5.f), FVector(8.f, wF * 0.86f, 2.6f), 0.4f, 8);                    // splitter
+		B.SuperBox(SDark, FVector(xF - 1.5f, 0, gc + 22.f), FVector(1.6f, wF * 0.56f, 9.5f), 0.3f, 10);                 // gran boca central
+		B.SuperBox(SMetal, FVector(xF - 0.6f, 0, gc + 31.8f), FVector(1.0f, wF * 0.52f, 0.9f), 0.3f, 6);
+		for (int32 k = -3; k <= 3; ++k) B.Box(SMetal, FVector(xF - 0.4f, k * wF * 0.11f, gc + 22.f), FVector(0.35f, 0.45f, 8.6f));
+		for (int32 s = -1; s <= 1; s += 2)
+		{
+			B.SuperBox(SDark, FVector(xF - 2.5f, s * wF * 0.80f, gc + 20.f), FVector(1.6f, 14.f, 8.5f), 0.3f, 8);   // entradas laterales
+			for (int32 q = 0; q < 3; ++q) B.Box(SMetal, FVector(xF - 0.9f, s * wF * 0.80f, gc + 15.f + q * 5.f), FVector(0.4f, 12.5f, 0.55f));
+			B.Xf = FTransform(FRotator(0.f, s * -10.f, 0.f), FVector(xF - 2.5f, s * wF * 0.67f, zTopF - 4.5f)) * Keep0;       // faros afilados
+			B.SuperBox(SDark, FVector(0.f), FVector(2.2f, 19.f, 3.0f), 0.4f, 8);
+			B.SuperBox(SLight, FVector(0.8f, 0.f, 0.3f), FVector(2.0f, 17.f, 1.5f), 0.5f, 8);
+			B.SuperBox(SLight, FVector(0.8f, s * 6.f, -2.4f), FVector(1.6f, 8.f, 0.6f), 0.5f, 6);
+			B.Xf = Keep0;
+		}
 		B.SuperBox(SDark, FVector(xB + 6.f, 0, gc + 15.f), FVector(8.f, wB * 0.94f, 13.f), 0.4f, 10);
 		B.SuperBox(SCarbon, FVector(xB + 2.f, 0, gc + 5.f), FVector(8.f, wB * 0.6f, 3.5f), 0.4f, 8);                    // difusor
 		for (int32 s = -1; s <= 1; s += 2) for (int32 q = 0; q < 2; ++q) B.Cylinder(SChrome, FVector(xB - 1.f, s * (wB * 0.34f + q * 11.f), gc + 7.f), FVector(-1, 0, 0), 4.2f, 5.f, 14, true);   // 4 escapes
@@ -299,19 +316,26 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 		B.SuperBox(SDark, FVector(xB + 3.f, 0, gc + 14.f), FVector(6.f, wB * 0.97f, 12.f), 0.3f, 8);
 		B.SuperBox(SDark, FVector(xF + 0.2f, 0, zTopF - 14.f), FVector(1.2f, wF * 0.34f, 9.f), 0.3f, 6);                // parrilla
 		for (int32 k = -1; k <= 1; ++k) B.Box(SChrome, FVector(xF + 0.9f, k * 12.f, zTopF - 14.f), FVector(0.4f, 0.8f, 8.f));
-		for (int32 s = -1; s <= 1; s += 2) { B.SuperBox(SLight, FVector(xF - 0.5f, s * wF * 0.66f, zTopF - 11.f), FVector(1.8f, 15.f, 6.f), 0.4f, 6); B.SuperBox(SAccent, FVector(xF - 0.5f, s * wF * 0.40f, gc + 22.f), FVector(1.2f, 4.f, 4.f), 0.8f, 6); }
-		Tail(wB * 0.83f, zTopB - 26.f, 3.5f, 11.f); Plate(xB - 0.5f, gc + 25.f, -1.f);
+		for (int32 s = -1; s <= 1; s += 2) { B.SuperBox(SLight, FVector(xF - 0.5f, s * wF * 0.66f, zTopF - 12.f), FVector(2.2f, 17.f, 8.f), 0.5f, 8); B.SuperBox(SAccent, FVector(xF - 0.5f, s * wF * 0.40f, gc + 22.f), FVector(1.2f, 4.f, 4.f), 0.8f, 6); }
+		Tail(wB * 0.86f, zTopB - 24.f, 4.5f, 17.f); Plate(xB - 0.5f, gc + 25.f, -1.f);
 		B.Box(SGlass, FVector(xB - 0.35f + 4.f, 0, 0.5f * (ZTopAt(0.03f) - 8.f + zBeltMax + 8.f)), FVector(0.3f, wB * 0.70f, 0.5f * (ZTopAt(0.03f) - 8.f - zBeltMax - 8.f)));
 		for (int32 s = -1; s <= 1; s += 2) B.Tube(SMetal, { FVector(-0.40f * L, s * (w0 * 0.82f), Ht + 0.5f), FVector(0.22f * L, s * (w0 * 0.82f), Ht + 0.5f) }, 1.2f, 6);
 		break;
 	}
 	case 3: // Defender
 	{
-		B.Box(SMetal, FVector(xF - 6.f, 0, gc + 12.f), FVector(8.f, wF * 0.99f, 8.f));                                  // parachoques de acero
+		B.Box(SMetal, FVector(xF - 1.f, 0, gc + 12.f), FVector(9.f, wF * 1.0f, 8.5f));                                  // parachoques de acero (sobresale)
 		B.Box(SMetal, FVector(xB + 6.f, 0, gc + 12.f), FVector(8.f, wB * 0.99f, 8.f));
-		B.Box(SDark, FVector(xF + 0.3f, 0, zTopF - 17.f), FVector(1.f, wF * 0.62f, 13.f));                              // panel de parrilla
-		for (int32 k = -3; k <= 3; ++k) B.Box(SMetal, FVector(xF + 0.9f, 0, zTopF - 17.f + k * 3.4f), FVector(0.5f, wF * 0.56f, 0.9f));
-		Round(wF * 0.60f, zTopF - 17.f, 8.5f);
+		B.Box(SDark, FVector(xF + 0.3f, 0, zTopF - 15.f), FVector(1.f, wF * 0.30f, 11.f));                              // parrilla estrecha
+		for (int32 k = -3; k <= 3; ++k) B.Box(SMetal, FVector(xF + 0.8f, 0, zTopF - 15.f + k * 3.2f), FVector(0.4f, wF * 0.28f, 0.45f));
+		for (int32 s = -1; s <= 1; s += 2)
+		{
+			B.SuperBox(SDark, FVector(xF - 0.2f, s * wF * 0.68f, zTopF - 14.f), FVector(1.4f, 12.5f, 12.5f), 0.25f, 6);   // embellecedor cuadrado
+			B.Torus(SChrome, FVector(xF + 1.2f, s * wF * 0.68f, zTopF - 14.f), FVector(1, 0, 0), 8.8f, 1.0f, 20, 6);
+			B.SuperBox(SLight, FVector(xF - 0.6f, s * wF * 0.68f, zTopF - 14.f), FVector(3.f, 8.f, 8.f), 1.0f, 8);
+			B.SuperBox(SAccent, FVector(xF + 0.3f, s * wF * 0.68f, zTopF - 27.f), FVector(1.f, 3.8f, 2.4f), 0.5f, 6);
+			B.Box(SMetal, FVector(xF - 18.f, s * wF * 0.60f, zTopF + 0.7f), FVector(13.f, wF * 0.30f, 0.3f));              // chapa estriada en las aletas
+		}
 		for (int32 s = -1; s <= 1; s += 2) { B.SuperBox(SAccent, FVector(xF - 1.f, s * wF * 0.85f, zTopF - 22.f), FVector(1.2f, 3.2f, 3.2f), 0.8f, 6); B.SuperBox(SDark, FVector(xF - 2.f, s * wF * 0.80f, gc + 14.f), FVector(2.f, 5.f, 4.f), 0.4f, 6); }
 		Tail(wB * 0.86f, zTopB - 34.f, 4.5f, 10.f); Plate(xB - 2.f, gc + 30.f, -1.f);
 		B.Box(SGlass, FVector(xB - 0.35f, 0, 0.5f * (zTopB - 10.f + zBeltMax + 8.f)), FVector(0.3f, wB * 0.70f, 0.5f * (zTopB - 10.f - zBeltMax - 8.f)));
@@ -345,7 +369,7 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 	// pasos de rueda ensanchados (plástico negro) y rasgos propios por modelo
 	if (!bOpen)
 	{
-		const float Flare = St == 0 ? 10.f : (St == 2 ? 6.f : (St == 3 ? 6.f : (St == 5 ? 9.f : (St == 1 ? 5.5f : 0.f))));
+		const float Flare = St == 0 ? 10.f : (St == 2 ? 7.f : (St == 3 ? 7.f : (St == 5 ? 9.f : (St == 1 ? 8.f : 0.f))));
 		if (Flare > 0.f) for (int32 i = 0; i < 4; ++i)
 		{
 			const FVector WP = WheelPos(i); const float side = (i % 2) == 0 ? -1.f : 1.f, w = WA(WP.X / L + 0.5f);
@@ -357,7 +381,7 @@ void ADustlineCar::BuildShell(FDustlineMeshBuilder& B)
 			B.SuperBox(SGlass, FVector(0.f), FVector(0.13f * L, 7.f, 1.1f), 0.4f, 6); B.Xf = Keep0;
 		}
 		if (St == 5) B.SuperBox(SDark, FVector((0.865f - 0.5f) * L, 0.f, ZTopAt(0.865f) + 1.6f), FVector(17.f, 13.f, 2.4f), 0.4f, 8);   // toma del capó
-		if (St == 2) for (int32 s = -1; s <= 1; s += 2) B.SuperBox(SDark, FVector(0.f, s * (w0 * 0.99f), gc + 28.f), FVector(0.32f * L, 0.8f, 4.f), 0.3f, 6);   // moldura lateral
+		if (St == 2) for (int32 s = -1; s <= 1; s += 2) B.SuperBox(SDark, FVector(0.f, s * (w0 * 0.995f), gc + 24.f), FVector(0.33f * L, 1.2f, 11.f), 0.3f, 6);   // moldura lateral
 	}
 	if (St == 6) { /* Crawler: jaula y accesorios en BuildBuggyBody-like extras */
 		const float zt = zBeltMax, hw = w0 - 6.f;

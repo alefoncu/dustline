@@ -112,7 +112,7 @@ void ADustlineCar::RefreshMaterials()
 	const float Fade = bXRay ? 0.12f : 1.f;
 	auto Set = [&](int32 id, UMaterialInstanceDynamic* M) { if (M) Mats.Add(id, M); };
 	UMaterialInstanceDynamic* Paint = MakeMat(G, Setup.Paint, 0.30f, 0.34f); if (Paint) Paint->SetScalarParameterValue(TEXT("Fade"), Fade);
-	UMaterialInstanceDynamic* Glass = MakeMat(G, FLinearColor(0.003f, 0.005f, 0.008f), 0.25f, 0.30f); if (Glass) Glass->SetScalarParameterValue(TEXT("Fade"), bXRay ? 0.08f : 1.f);
+	UMaterialInstanceDynamic* Glass = MakeMat(G, FLinearColor(0.0015f, 0.0025f, 0.004f), 0.0f, 0.62f); if (Glass) Glass->SetScalarParameterValue(TEXT("Fade"), bXRay ? 0.08f : 1.f);
 	UMaterialInstanceDynamic* Dark = MakeMat(G, FLinearColor(0.014f, 0.014f, 0.016f), 0.15f, 0.62f); if (Dark && bXRay) Dark->SetScalarParameterValue(TEXT("Fade"), 0.3f);
 	Set(SPaint, Paint); Set(SGlass, Glass); Set(SDark, Dark);
 	if (UMaterialInstanceDynamic* Mt = MakeMat(G, FLinearColor(0.30f, 0.30f, 0.32f), 1.0f, 0.34f)) { Mt->SetScalarParameterValue(TEXT("Emissive"), bXRay ? 0.07f : 0.f); Set(SMetal, Mt); }
