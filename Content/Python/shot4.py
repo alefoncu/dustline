@@ -21,13 +21,15 @@ if name.startswith("lineup"):
     car.set_actor_location(V(0, 0, -5000), False, False)
     for i in range(7):
         c2 = unreal.EditorLevelLibrary.spawn_actor_from_class(unreal.DustlineCar, V(0, (i - 3) * 330, 0))
+        if os.environ.get("SHOT_NOKEN"): c2.set_editor_property("use_kenney", False)
         c2.apply_setup(unreal.DustlineCar.stock_setup(i)); c2.set_x_ray(cfg["xray"])
 s = unreal.DustlineCar.stock_setup(cfg["model"])
 for k, v in cfg.get("over", {}).items(): s.set_editor_property(k, v)
+if os.environ.get("SHOT_NOKEN"): car.set_editor_property("use_kenney", False)
 car.apply_setup(s); car.set_x_ray(cfg["xray"])
 loc, rot = cfg["cam"], look(cfg["cam"], cfg["tgt"])
 S = {"t0": time.time(), "phase": "wait", "fired": 0}
-path = "/Volumes/SSD/UE-Cache/car_%s.png" % name
+path = "/Volumes/SSD/UE-Cache/car_%s.png" % (name + os.environ.get("SHOT_SUFFIX", ""))
 def tick(dt):
     now = time.time() - S["t0"]
     unreal.EditorLevelLibrary.set_level_viewport_camera_info(loc, rot)

@@ -1,4 +1,5 @@
 #include "DustlineCar.h"
+#include "DustlineCarParts.h"
 #include "UnrealClient.h"
 #include "Misc/App.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
@@ -270,44 +271,73 @@ void ADustlineCar::CloseGarage()
 
 void ADustlineCar::ToggleGarage() { if (bGarage) CloseGarage(); else OpenGarage(); }
 
+static constexpr float kOut = 0.30f, kIn = 0.70f;
 static float EaseBack(float T)
 {
-	T = FMath::Clamp(T, 0.f, 1.f); const float C1 = 1.9f, C3 = C1 + 1.f, U = T - 1.f;
+	T = FMath::Clamp(T, 0.f, 1.f); const float C1 = 1.15f, C3 = C1 + 1.f, U = T - 1.f;
 	return 1.f + C3 * U * U * U + C1 * U * U;
 }
-void ADustlineCar::NoteSetupChange()
+// desplazamiento de una pieza: 0 = montada, 1 = fuera. Shift retrasa la pieza (escalonado de ruedas).
+static float SwapD(const ADustlineCar::FSwap& W, float Shift)
 {
-	if (!bHaveLast) { LastSetup = Setup; PaintShown = Setup.Paint; bHaveLast = true; return; }
+	if (W.S == ADustlineCar::ESwap::Idle) return 0.f;
+	if (W.S == ADustlineCar::ESwap::Out) { const float t = FMath::Clamp((W.T - Shift) / kOut, 0.f, 1.f); return W.D0 + (1.f - W.D0) * t * t * t; }
+	const float t = FMath::Clamp((W.T - Shift) / kIn, 0.f, 1.f); return W.D0 * (1.f - EaseBack(t));
+}
+bool ADustlineCar::NoteSetupChange()
+{
+	if (!bHaveLast) { LastSetup = Setup; PaintShown = Setup.Paint; bHaveLast = true; return false; }
 	const FDustlineSetup& A = LastSetup; const FDustlineSetup& B = Setup;
 	auto Ne = [](float a, float b) { return !FMath::IsNearlyEqual(a, b, 0.004f); };
-	if (A.Model != B.Model) { AnimModel = 0.f; AnimWheels = 0.f; BounceT = 0.f; }
+	auto Start = [this](FSwap& W, float Stag) { if (W.S != ESwap::Out) { W.S = ESwap::Out; W.T = 0.f; W.D0 = W.D; } W.Stag = Stag; bRebuildPending = true; };
+	if (A.Model != B.Model) Start(SwModel, 0.f);
 	else
 	{
-		if (Ne(A.EngineCC, B.EngineCC) || Ne(A.Turbo, B.Turbo)) AnimEngine = 0.f;
-		if (Ne(A.TireRadiusM, B.TireRadiusM) || Ne(A.TireWidthM, B.TireWidthM) || A.TireType != B.TireType) { AnimWheels = 0.f; BounceT = 0.f; }
-		if (Ne(A.Stiffness, B.Stiffness) || Ne(A.TravelM, B.TravelM) || A.Drive != B.Drive) { AnimSusp = 0.f; BounceT = 0.f; }
+		if (Ne(A.EngineCC, B.EngineCC) || Ne(A.Turbo, B.Turbo)) Start(SwEngine, 0.f);
+		if (Ne(A.TireRadiusM, B.TireRadiusM) || Ne(A.TireWidthM, B.TireWidthM) || A.TireType != B.TireType) Start(SwWheels, 0.15f);
+		if (Ne(A.Stiffness, B.Stiffness) || Ne(A.TravelM, B.TravelM) || A.Drive != B.Drive) Start(SwSusp, 0.f);
 		if (Ne(A.Ballast, B.Ballast)) BounceT = 0.f;
 	}
 	if (!A.Paint.Equals(B.Paint, 0.002f)) { PaintFrom = PaintShown; AnimPaint = 0.f; }
 	LastSetup = B;
+	return bRebuildPending;
 }
 void ADustlineCar::StepAnims(float Dt)
 {
-	AnimEngine = FMath::Min(1.f, AnimEngine + Dt / 0.75f); AnimWheels = FMath::Min(1.f, AnimWheels + Dt / 0.60f);
-	AnimSusp = FMath::Min(1.f, AnimSusp + Dt / 0.65f); AnimModel = FMath::Min(1.f, AnimModel + Dt / 0.85f);
+	FSwap* All[4] = { &SwEngine, &SwWheels, &SwSusp, &SwModel };
+	bool bAllOutDone = true;
+	for (FSwap* W : All)
+	{
+		if (W->S == ESwap::Idle) continue;
+		W->T += Dt;
+		if (W->S == ESwap::Out) { W->D = SwapD(*W, 0.f); if (W->T < kOut + W->Stag) bAllOutDone = false; }
+		else if (W->T >= kIn + W->Stag) { W->S = ESwap::Idle; W->D = 0.f; W->D0 = 0.f; }
+	}
+	if (bRebuildPending && bAllOutDone)
+	{
+		Rebuild(); bRebuildPending = false;
+		for (FSwap* W : All) if (W->S == ESwap::Out) { W->S = ESwap::In; W->T = 0.f; W->D0 = 1.f; W->D = 1.f; }
+		if (SwWheels.S == ESwap::In || SwSusp.S == ESwap::In || SwModel.S == ESwap::In) BounceT = -0.40f;
+	}
 	AnimPaint = FMath::Min(1.f, AnimPaint + Dt / 0.45f); BounceT += Dt;
 }
 void ADustlineCar::ApplyAnims()
 {
 	if (!Visual || !Engine || !Suspension) return;
-	// el coche "cae" y se asienta al cambiar de modelo; rebote amortiguado al cambiar suspensión, ruedas o lastre
-	const float Bounce = BounceT < 1.4f ? -7.f * FMath::Exp(-5.f * BounceT) * FMath::Cos(15.f * BounceT) : 0.f;
-	const float Drop = (1.f - EaseBack(AnimModel)) * 70.f;
-	Visual->SetRelativeLocation(FVector(0.f, 0.f, -ZCom + Drop + Bounce));
-	Engine->SetRelativeLocation(FVector(0.f, 0.f, (1.f - EaseBack(AnimEngine)) * 55.f));
-	Suspension->SetRelativeLocation(FVector(0.f, 0.f, (1.f - EaseBack(AnimSusp)) * 22.f));
-	const float Ws = FMath::Max(0.05f, FMath::Lerp(0.55f, 1.f, EaseBack(AnimWheels)));
-	for (UProceduralMeshComponent* W : Wheels) if (W) W->SetRelativeScale3D(FVector(Ws));
+	const float Bounce = (BounceT >= 0.f && BounceT < 1.4f) ? -6.f * FMath::Exp(-5.f * BounceT) * FMath::Cos(15.f * BounceT) : 0.f;
+	Visual->SetRelativeLocation(FVector(0.f, 0.f, -ZCom + SwapD(SwModel, 0.f) * 170.f + Bounce));
+	Engine->SetRelativeLocation(FVector(0.f, 0.f, SwapD(SwEngine, 0.f) * 120.f));
+	Suspension->SetRelativeLocation(FVector(0.f, 0.f, -SwapD(SwSusp, 0.f) * 75.f));
+	const float Reach = Setup.TireWidthM * 50.f + 140.f;
+	for (int32 i = 0; i < Wheels.Num(); ++i)
+	{
+		UProceduralMeshComponent* W = Wheels[i]; if (!W) continue;
+		const float D = SwapD(SwWheels, i * SwWheels.Stag / 3.f);
+		if (D == 0.f) continue;
+		FVector L = W->GetRelativeLocation(); const float Side = L.Y >= 0.f ? 1.f : -1.f;
+		L.Y += Side * Reach * D; L.Z += 18.f * FMath::Sin(PI * FMath::Clamp(D, 0.f, 1.f));
+		W->SetRelativeLocationAndRotation(L, W->GetRelativeRotation().Quaternion() * FQuat(FVector(0, 1, 0), D * 4.5f * -Side));
+	}
 	if (AnimPaint < 1.f || PaintShown != Setup.Paint)
 	{
 		const float U = FMath::SmoothStep(0.f, 1.f, AnimPaint);
@@ -357,10 +387,11 @@ void ADustlineCar::UiDemo()
 	else if (Step == 13 && T > 27.f) { OpenGarage(); Step = 14; }
 	else if (Step == 14 && T > 30.f) { Shot(8); Step = 15; }
 	else if (Step == 15 && T > 31.f) { Setup.EngineCC = 7000.f; Setup.Turbo = 2.4f; bSetupDirty = true; Step = 16; }
-	else if (Step == 16 && T > 31.25f) { Shot(9); Step = 17; }
-	else if (Step == 17 && T > 33.f) { Shot(10); Step = 18; }
-	else if (Step == 18 && T > 34.f) { Setup.TireRadiusM = 0.57f; Setup.TireWidthM = 0.40f; GarageFocus = 2; bSetupDirty = true; Step = 19; }
-	else if (Step == 19 && T > 34.2f) { Shot(11); Step = 20; }
+	else if (Step == 16 && T > 31.2f) { Shot(9); Step = 17; }
+	else if (Step == 17 && T > 31.7f) { Shot(10); Step = 18; }
+	else if (Step == 18 && T > 33.5f) { Setup.TireRadiusM = 0.57f; Setup.TireWidthM = 0.40f; GarageFocus = 2; bSetupDirty = true; Step = 19; }
+	else if (Step == 19 && T > 34.25f) { Shot(11); Step = 21; }
+	else if (Step == 21 && T > 34.7f) { Shot(12); Step = 20; }
 	else if (Step == 20 && T > 37.f) { FPlatformMisc::RequestExit(false); }
 }
 

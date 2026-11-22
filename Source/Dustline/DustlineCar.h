@@ -5,6 +5,8 @@
 #include "Camera/CameraComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInterface.h"
+#include "DustlineMeshBuilder.h"
 #include "DustlineCar.generated.h"
 
 USTRUCT(BlueprintType)
@@ -42,7 +44,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UCameraComponent* Cam;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UProceduralMeshComponent* Body;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UStaticMeshComponent* KBody;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dustline") bool bUseKenney = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dustline") bool bUseKenney = false;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UProceduralMeshComponent* Engine;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) UProceduralMeshComponent* Suspension;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly) TArray<UProceduralMeshComponent*> Wheels;
@@ -107,16 +109,23 @@ private:
 	TSharedRef<class SWidget> BuildGarageWidget();
 	void UpdateGarageCamera(float Dt);
 	void UiDemo();
-	// animaciones de montaje de piezas
-	float AnimEngine = 1.f, AnimWheels = 1.f, AnimSusp = 1.f, AnimModel = 1.f, AnimPaint = 1.f, BounceT = 9.f;
+public:
+	// animaciones de montaje de piezas: la pieza vieja sale, se cambia la malla y la nueva entra
+	enum class ESwap : uint8 { Idle, Out, In };
+	struct FSwap { ESwap S = ESwap::Idle; float T = 0.f, D0 = 0.f, D = 0.f, Stag = 0.f; };
+	FSwap SwEngine, SwWheels, SwSusp, SwModel; bool bRebuildPending = false;
+	float AnimPaint = 1.f, BounceT = 9.f;
 	FLinearColor PaintFrom = FLinearColor::Black, PaintShown = FLinearColor::Black;
 	FDustlineSetup LastSetup; bool bHaveLast = false;
-	void NoteSetupChange();
+	bool NoteSetupChange();   // true = la reconstrucción queda aplazada hasta que salgan las piezas viejas
 	void StepAnims(float Dt);
 	void ApplyAnims();
+private:
 	FString GarageReadout() const;
 	FString LogLine; float LogT = 0.f; float FpsAcc = 0.f; int32 FpsN = 0;
 	void BuildBody(); void BuildWheels(); void BuildSuspension(); void BuildEngine();
+	void BuildShell(FDustlineMeshBuilder& B); void BuildBuggyBody(FDustlineMeshBuilder& B);
+	float BodyH() const; void BuildBodyKen();
 	UMaterialInstanceDynamic* MakeMat(const TCHAR* BasePath, const FLinearColor& Color, float Metallic, float Roughness);
 	TMap<int32, UMaterialInterface*> Mats;
 	void RefreshMaterials();
