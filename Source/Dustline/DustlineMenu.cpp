@@ -126,7 +126,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildMain()
 	Stack->AddSlot().AutoHeight().Padding(0, 2, 0, 0)[ Appear(Text(TEXT("Conduce. Modifica. Domina el terreno."), 26.f, Label2()), 0.10f) ];
 	Stack->AddSlot().AutoHeight()[ Spacer(60.f) ];
 	Stack->AddSlot().AutoHeight()[ Appear(Button(TEXT("Conducir"), [Weak]() { if (auto M = Weak.Pin()) M->StartDriving(); }, EBtn::Primary, 400.f, 24.f), 0.16f) ];
-	Stack->AddSlot().AutoHeight().Padding(0, 14, 0, 0)[ Appear(Button(TEXT("Garaje"), [Weak]() { if (auto M = Weak.Pin()) M->OpenGarageFrom(EScreen::Main); }, EBtn::Secondary, 400.f, 24.f), 0.20f) ];
+	Stack->AddSlot().AutoHeight().Padding(0, 14, 0, 0)[ Appear(Button(TEXT("Configurar coche"), [Weak]() { if (auto M = Weak.Pin()) M->OpenGarageFrom(EScreen::Main); }, EBtn::Secondary, 400.f, 24.f), 0.20f) ];
 	Stack->AddSlot().AutoHeight().Padding(0, 14, 0, 0)[ Appear(Button(TEXT("Ajustes"), [Weak]() { if (auto M = Weak.Pin()) M->ShowSettings(); }, EBtn::Secondary, 400.f, 24.f), 0.24f) ];
 	Stack->AddSlot().AutoHeight().Padding(0, 14, 0, 0)[ Appear(Button(TEXT("Salir"), [Weak]() { if (auto M = Weak.Pin()) if (APlayerController* PC = PCOf(M->Car.Get())) PC->ConsoleCommand(TEXT("quit")); }, EBtn::Plain, 400.f, 22.f), 0.28f) ];
 
@@ -139,7 +139,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildMain()
 		[ SNew(SBox).WidthOverride(300.f)
 			[ SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ SNew(STextBlock).Font(Font(26.f)).ColorAndOpacity(Label()).Text_Lambda([C]() { return FText::FromString(C ? ADustlineCar::ModelName(C->Setup.Model) : FString()); }) ]
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 2, 0, 0)[ Text(TEXT("Tu coche"), 15.f, Label2()) ] ] ]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 2, 0, 0)[ Text(TEXT("Coche de serie"), 15.f, Label2()) ] ] ]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Button(TEXT("›"), [Step]() { Step(1); }, EBtn::Round, 0.f, 30.f) ],
 		40.f, FMargin(14, 12));
 
@@ -160,7 +160,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildPause()
 	V->AddSlot().AutoHeight().HAlign(HAlign_Center)[ Text(TEXT("En pausa"), 40.f, Label(), 1) ];
 	V->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6, 0, 28)[ SNew(STextBlock).Font(Font(19.f)).ColorAndOpacity(Label2()).Text_Lambda([C]() { return FText::FromString(C ? ADustlineCar::ModelName(C->Setup.Model) : FString()); }) ];
 	V->AddSlot().AutoHeight()[ Button(TEXT("Reanudar"), [Weak]() { if (auto M = Weak.Pin()) M->Resume(); }, EBtn::Primary, 0.f, 23.f) ];
-	V->AddSlot().AutoHeight().Padding(0, 12, 0, 0)[ Button(TEXT("Garaje"), [Weak]() { if (auto M = Weak.Pin()) M->OpenGarageFrom(EScreen::Pause); }, EBtn::Secondary, 0.f, 23.f) ];
+	V->AddSlot().AutoHeight().Padding(0, 12, 0, 0)[ Button(TEXT("Taller"), [Weak]() { if (auto M = Weak.Pin()) M->OpenGarageFrom(EScreen::Pause); }, EBtn::Secondary, 0.f, 23.f) ];
 	V->AddSlot().AutoHeight().Padding(0, 12, 0, 0)[ Button(TEXT("Ajustes"), [Weak]() { if (auto M = Weak.Pin()) M->ShowSettings(); }, EBtn::Secondary, 0.f, 23.f) ];
 	V->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 24, 0, 0)
 	[ Segmented({ TEXT("Despejado"), TEXT("Lluvia"), TEXT("Nieve") },
@@ -221,7 +221,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 		Add(Group({ Row(TEXT("Acelerar / frenar y marcha atrás"), Keys({ TEXT("W"), TEXT("S") })), Row(TEXT("Girar"), Keys({ TEXT("A"), TEXT("D") })), Row(TEXT("Freno de mano"), Keys({ TEXT("Espacio") })),
 			Row(TEXT("Turbo"), Keys({ TEXT("Shift") })), Row(TEXT("Enderezar el coche"), Keys({ TEXT("R") })) }));
 		Add(Section(TEXT("Juego")));
-		Add(Group({ Row(TEXT("Cambiar de cámara"), Keys({ TEXT("C") })), Row(TEXT("Clima: despejado, lluvia, nieve"), Keys({ TEXT("1"), TEXT("2"), TEXT("3") })), Row(TEXT("Garaje"), Keys({ TEXT("G") })), Row(TEXT("Pausa y menú"), Keys({ TEXT("Esc") })) }));
+		Add(Group({ Row(TEXT("Cambiar de cámara"), Keys({ TEXT("C") })), Row(TEXT("Clima: despejado, lluvia, nieve"), Keys({ TEXT("1"), TEXT("2"), TEXT("3") })), Row(TEXT("Taller"), Keys({ TEXT("G") })), Row(TEXT("Pausa y menú"), Keys({ TEXT("Esc") })) }));
 	}
 	else // Acerca de
 	{
@@ -320,7 +320,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 	{ return SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ KeyCap(K, 15.f) ] + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0, 22, 0)[ Text(L, 16.f, Label2()) ]; };
 	TSharedRef<SWidget> Hints = SNew(SBorder).BorderImage(Box(DUI::Clear(), 0.f))
 		.ColorAndOpacity_Lambda([Weak, S]() { auto M = Weak.Pin(); if (!M.IsValid() || !S->bHints) return FLinearColor(1, 1, 1, 0); const float T = (float)(FPlatformTime::Seconds() - M->DriveStart); return FLinearColor(1, 1, 1, FMath::Clamp(1.f - (T - 9.f) / 2.f, 0.f, 1.f) * FMath::Clamp(T / 0.6f, 0.f, 1.f)); })
-		[ Glass(SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("Esc"), TEXT("Pausa")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("G"), TEXT("Garaje")) ]
+		[ Glass(SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("Esc"), TEXT("Pausa")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("G"), TEXT("Taller")) ]
 			+ SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("C"), TEXT("Cámara")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("R"), TEXT("Enderezar")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("Shift"), TEXT("Turbo")) ], 26.f, FMargin(20, 11, 0, 11)) ];
 
 	return SNew(SBox).Visibility_Lambda([Driving, S]() { return Driving() && S->bHUD ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
