@@ -310,6 +310,7 @@ AActor* UDustlineTerrainLibrary::ScatterInstances(UObject* WorldContextObject, U
 	if (CullEndCm > 0.f) { C->SetCullDistances(0, (int32)CullEndCm); }
 	C->bAffectDistanceFieldLighting = false;
 	C->AddInstances(Xf, false, true);
+	C->BuildTreeIfOutdated(true, true);
 	UE_LOG(LogDustlineTerrain, Display, TEXT("Scatter %s: %d/%d instances (%d tries)"), *Label, Xf.Num(), Count, Tries);
 	return A;
 }
@@ -318,8 +319,9 @@ UStaticMesh* UDustlineTerrainLibrary::CreateProceduralConifer(const FString& Pac
 	int32 Whorls, int32 CardsPerWhorl, float CrownWidthCm, UMaterialInterface* BarkMaterial, UMaterialInterface* FoliageMaterial)
 {
 #if WITH_EDITOR
+	auto BuildLOD = [&](FMeshDescription& MD, int32 LW, int32 LC, float WMul, float LMul)
+	{
 	FRandomStream Rng(Seed);
-	FMeshDescription MD;
 	FStaticMeshAttributes Attr(MD);
 	Attr.Register();
 	TVertexAttributesRef<FVector3f> Pos = Attr.GetVertexPositions();
@@ -378,13 +380,13 @@ UStaticMesh* UDustlineTerrainLibrary::CreateProceduralConifer(const FString& Pac
 	}
 
 	// ---- foliage: whorls of drooping needle-spray cards ----
-	for (int32 w = 0; w < Whorls; ++w)
+	for (int32 w = 0; w < LW; ++w)
 	{
-		const float T = (float)w / FMath::Max(1, Whorls - 1);
+		const float T = (float)w / FMath::Max(1, LW - 1);
 		const float Z = HeightCm * (0.14f + 0.84f * T);
-		const float Len = CrownWidthCm * 0.5f * (FMath::Pow(1.f - T, 0.9f) * 0.92f + 0.10f) * Rng.FRandRange(0.88f, 1.12f);
+		const float Len = LMul * CrownWidthCm * 0.5f * (FMath::Pow(1.f - T, 0.9f) * 0.92f + 0.10f) * Rng.FRandRange(0.88f, 1.12f);
 		const float Phase = Rng.FRandRange(0.f, 2 * PI);
-		const int32 Cards = FMath::Max(3, CardsPerWhorl - (int32)(T * 2.f));
+		const int32 Cards = FMath::Max(3, LC - (int32)(T * 2.f));
 		for (int32 k = 0; k < Cards; ++k)
 		{
 			const float Th = Phase + 2 * PI * (k + Rng.FRandRange(-0.18f, 0.18f)) / Cards;
@@ -392,7 +394,7 @@ UStaticMesh* UDustlineTerrainLibrary::CreateProceduralConifer(const FString& Pac
 			const FVector3f Side(-D.Y, D.X, 0.f);
 			const float Droop = Len * FMath::Lerp(0.34f, 0.10f, T) + Rng.FRandRange(-0.04f, 0.04f) * Len;
 			const float R0 = TrunkR(Z) * 0.6f;
-			const float WBase = Len * 0.26f, WTip = Len * 0.62f;
+			const float WBase = Len * 0.26f * WMul, WTip = Len * 0.62f * WMul;
 			const FVector3f Nrm0 = FVector3f(D.X, D.Y, 0.62f).GetSafeNormal();
 			// horizontal-ish card
 			const FVector3f A = D * R0 - Side * WBase + FVector3f(0, 0, Z), B = D * R0 + Side * WBase + FVector3f(0, 0, Z);
@@ -416,6 +418,11 @@ UStaticMesh* UDustlineTerrainLibrary::CreateProceduralConifer(const FString& Pac
 		AddQuad(GFol, A, B, C, Dd, D, Side, false);
 	}
 
+	};
+	FMeshDescription MD0, MD1, MD2;
+	BuildLOD(MD0, Whorls + 4, CardsPerWhorl + 3, 1.0f, 1.0f);
+	BuildLOD(MD1, Whorls, CardsPerWhorl, 1.2f, 1.0f);
+	BuildLOD(MD2, FMath::Max(5, Whorls / 2), 5, 1.9f, 1.08f);
 	const FString PackageName = PackagePath + TEXT("/") + AssetName;
 	UPackage* Pkg = CreatePackage(*PackageName);
 	UStaticMesh* SM = NewObject<UStaticMesh>(Pkg, *AssetName, RF_Public | RF_Standalone);
@@ -423,13 +430,15 @@ UStaticMesh* UDustlineTerrainLibrary::CreateProceduralConifer(const FString& Pac
 	SM->GetStaticMaterials().Add(FStaticMaterial(FoliageMaterial, FName("Foliage")));
 	UStaticMesh::FBuildMeshDescriptionsParams Params;
 	Params.bMarkPackageDirty = true; Params.bBuildSimpleCollision = false; Params.bFastBuild = true;
-	TArray<const FMeshDescription*> MDs; MDs.Add(&MD);
+	TArray<const FMeshDescription*> MDs; MDs.Add(&MD0); MDs.Add(&MD1); MDs.Add(&MD2);
+	SM->SetAutoComputeLODScreenSize(false);
 	SM->BuildFromMeshDescriptions(MDs, Params);
+	{ const float Sz[3] = { 1.0f, 0.13f, 0.035f }; for (int32 l = 0; l < SM->GetNumSourceModels() && l < 3; ++l) SM->GetSourceModel(l).ScreenSize.Default = Sz[l]; }
 	// trunk capsule collision (cheap; lets vehicles hit the trunk)
 	if (!SM->GetBodySetup()) SM->CreateBodySetup();
 	if (UBodySetup* BS = SM->GetBodySetup())
 	{
-		FKSphylElem E; E.Radius = FMath::Max(8.f, TrunkRadiusCm * 0.9f); E.Length = FMath::Max(10.f, HeightCm * 0.55f);
+		FKSphylElem E; E.Radius = FMath::Max(8.f, TrunkRadiusCm * 0.8f); E.Length = FMath::Max(10.f, HeightCm * 0.55f);
 		E.Center = FVector(0, 0, HeightCm * 0.32f);
 		BS->AggGeom.SphylElems.Add(E);
 		BS->CollisionTraceFlag = CTF_UseSimpleAsComplex;

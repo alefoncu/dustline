@@ -8,6 +8,9 @@ def look(cam, tgt):
 SH = {
  "g_ext":   dict(model=0, xray=False, cam=V(-520, -470, 170), tgt=V(0, 0, 95)),
  "g_xray":  dict(model=0, xray=True,  cam=V(330, -300, 240),  tgt=V(145, 0, 70)),
+ "g_front": dict(model=0, xray=False, cam=V(560, -420, 190), tgt=V(0, 0, 95)),
+ "g_side": dict(model=0, xray=False, cam=V(0, -700, 140), tgt=V(0, 0, 90)),
+ "urus_front": dict(model=1, xray=False, cam=V(560, -420, 150), tgt=V(0, 0, 80)),
  "g_under": dict(model=0, xray=False, cam=V(-300, -420, 40),  tgt=V(0, 0, 40)),
  "panda_v8": dict(model=2, xray=True, over=dict(engine_cc=7000.0, turbo=3.0), cam=V(290, -270, 220), tgt=V(110, 0, 60)),
  "panda_stock": dict(model=2, xray=True, cam=V(290, -270, 220), tgt=V(110, 0, 60)),
@@ -35,7 +38,7 @@ def tick(dt):
     unreal.EditorLevelLibrary.set_level_viewport_camera_info(loc, rot)
     if S["phase"] == "wait" and now > 70:
         unreal.SystemLibrary.execute_console_command(None, "HighResShot 1280x720 filename=%s" % path); S["phase"] = "saving"; S["fired"] = now
-    elif S["phase"] == "saving" and (os.path.exists(path) or now - S["fired"] > 240):
+    elif S["phase"] == "saving" and (os.path.exists(path) or now - S["fired"] > 600):
         print("SHOT_DONE", name, os.path.exists(path)); S["phase"] = "end"; S["t1"] = time.time()
     elif S["phase"] == "end" and time.time() - S["t1"] > 3:
         unreal.unregister_slate_post_tick_callback(handle); unreal.SystemLibrary.quit_editor()

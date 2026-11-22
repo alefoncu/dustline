@@ -80,7 +80,8 @@ void ADustlineCar::ComputeKenney()
 	const float R = Setup.TireRadiusM * 100.f, Tcm = Setup.TravelM * 100.f;
 	const float lift = FMath::Max(0.f, Tcm * 0.30f - 10.f), extra = FMath::Max(0.f, R - 42.f);
 	KSx = M.W * 0.5f / K.Ex; KSy = M.L * 0.5f / K.Ey;
-	KSz = FMath::Max(0.5f, (M.H - lift - R - extra) / FMath::Max(10.f, K.Top - K.WheelZ));
+	const float R0 = M.Radius * 100.f, lift0 = FMath::Max(0.f, M.Travel * 100.f * 0.30f - 10.f), extra0 = FMath::Max(0.f, R0 - 42.f);
+	KSz = FMath::Max(0.5f, (M.H - lift0 - R0 - extra0) / FMath::Max(10.f, K.Top - K.WheelZ));
 	KBodyZ = lift + R - K.WheelZ * KSz + extra;
 	bKen = true;
 }
@@ -107,7 +108,7 @@ void ADustlineCar::RefreshMaterials()
 	const TCHAR* G = TEXT("/Game/Cars/M_CarGeneric.M_CarGeneric");
 	const float Fade = bXRay ? 0.12f : 1.f;
 	auto Set = [&](int32 id, UMaterialInstanceDynamic* M) { if (M) Mats.Add(id, M); };
-	UMaterialInstanceDynamic* Paint = MakeMat(G, Setup.Paint, 0.55f, 0.24f); if (Paint) Paint->SetScalarParameterValue(TEXT("Fade"), Fade);
+	UMaterialInstanceDynamic* Paint = MakeMat(G, Setup.Paint, 0.30f, 0.34f); if (Paint) Paint->SetScalarParameterValue(TEXT("Fade"), Fade);
 	UMaterialInstanceDynamic* Glass = MakeMat(G, FLinearColor(0.012f, 0.018f, 0.026f), 0.85f, 0.07f); if (Glass) Glass->SetScalarParameterValue(TEXT("Fade"), bXRay ? 0.08f : 1.f);
 	UMaterialInstanceDynamic* Dark = MakeMat(G, FLinearColor(0.014f, 0.014f, 0.016f), 0.15f, 0.62f); if (Dark && bXRay) Dark->SetScalarParameterValue(TEXT("Fade"), 0.3f);
 	Set(SPaint, Paint); Set(SGlass, Glass); Set(SDark, Dark);

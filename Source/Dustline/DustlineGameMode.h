@@ -9,4 +9,5 @@ class DUSTLINE_API ADustlineGameMode : public AGameModeBase
 	GENERATED_BODY()
 public:
 	ADustlineGameMode();
+	virtual void BeginPlay() override;
 };

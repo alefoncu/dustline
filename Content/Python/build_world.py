@@ -46,6 +46,9 @@ meshes = {}
 for i in IDS:
     m = load_mesh(i); meshes[i] = m
     make_lods(m)
+    if i.startswith(("rock","stone","boulder","dead_tree","tree_stump")):
+        try: sms.set_convex_decomposition_collisions(m, 6, 16, 100000.0)   # colisión que sigue la forma real (sin "aire" alrededor)
+        except Exception as e: print("BW_CONVEX_FAIL", i, e)
     unreal.EditorAssetLibrary.save_loaded_asset(m)
 
 def height_cm(m, axis='z'):
