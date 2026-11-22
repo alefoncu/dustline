@@ -26,6 +26,8 @@ namespace
 		bool bSmoothTop = false;
 		float Half = 90.f, RcF = 10.f, RcR = 10.f;      // semiancho y radio de las esquinas en planta
 		TArray<FVector> Haunch;                        // (x, ensanche, semilongitud)
+		bool bHaunchHigh = false;                      // el ensanche solo por encima del pliegue (hombro marcado)
+		FVector2D ChamF = FVector2D(0, 1), ChamR = FVector2D(0, 1);   // morro/cola en punta: (retranqueo de las esquinas, longitud)
 		float RoofIn = 0.9f, BeltStep = 2.f, Rb = 3.f, Rs = 4.f, Rr = 5.f, CrownH = 1.5f, CrownR = 2.f, Bulge = 0.5f, Tuck = 2.f;
 		float CreaseZ = 0.f, CreaseZR = -1.f, CreaseD = 0.f, CreaseW = 4.f;   // pliegue lateral (delante / detrás)
 		float CladZ = 0.f;                             // revestimiento negro inferior
@@ -56,7 +58,7 @@ namespace
 			D.Half = 94.f; D.RcF = 7.f; D.RcR = 5.f;
 			D.RoofIn = 0.95f; D.BeltStep = 1.5f; D.Rb = 3.f; D.Rs = 3.5f; D.Rr = 4.5f; D.CrownH = 1.5f; D.CrownR = 2.f; D.Bulge = 0.6f; D.Tuck = 2.5f;
 			D.CreaseZ = 104.f; D.CreaseD = 1.0f; D.CreaseW = 3.f; D.SmoothDeg = 22.f;
-			D.Arch = EArch::Round; D.ArchGap = 7.f; D.FlareMat = SPaint; D.FlareOut = 6.f; D.FlareT = 6.f;
+			D.Arch = EArch::Round; D.ArchGap = 7.f; D.FlareMat = SPaint; D.FlareOut = 8.f; D.FlareT = 8.f;
 			D.Win = V2({ 9,90, 109,174, 195,272 }); D.TopGlass = V2({ 256,288 }); D.Frame = 13.5f; D.FrameBot = 2.5f;
 			D.Gaps = V2({ 101,1, 184.5f,1, 286,0 });
 			break;
@@ -66,9 +68,10 @@ namespace
 			// sobre la rueda trasera con habitáculo estrecho encima; mitad inferior de frontal/trasera, faldones y pasos en negro
 			D.Top = V2({ 0,128, 3,134, 10,137, 22,138.5f, 30,139.5f, 40,141, 70,148, 110,154, 150,158, 190,162, 220,164, 265,164, 295,162.5f, 310,160, 368,120, 380,118, 420,112, 460,104, 490,98, 503,95, 509,92, 511,88 });
 			D.Sh = V2({ 0,137, 60,138, 128,137, 167,129, 261,121, 331,118, 368,117, 511,100 });
-			D.Bot = V2({ 0,40, 15,33, 40,30, 470,30, 500,34, 511,40 });
-			D.Half = 100.f; D.RcF = 32.f; D.RcR = 24.f;
-			D.Haunch = { FVector(112.f, 7.f, 95.f), FVector(409.f, 3.f, 65.f) };
+			D.Bot = V2({ 0,36, 15,32, 40,30, 470,30, 500,30, 511,31 });
+			D.Half = 100.f; D.RcF = 18.f; D.RcR = 20.f;
+			D.Haunch = { FVector(118.f, 8.f, 100.f), FVector(409.f, 4.f, 70.f) }; D.bHaunchHigh = true;
+			D.ChamF = FVector2D(22.f, 48.f); D.ChamR = FVector2D(8.f, 30.f);
 			D.RoofIn = 0.64f; D.BeltStep = 9.f; D.Rb = 5.f; D.Rs = 6.f; D.Rr = 9.f; D.CrownH = -2.5f; D.CrownR = 5.f; D.Bulge = 2.f; D.Tuck = 6.f;
 			D.CreaseZ = 82.f; D.CreaseZR = 95.f; D.CreaseD = 2.0f; D.CreaseW = 3.f; D.CladZ = 47.f; D.bNoseDark = true; D.SmoothDeg = 34.f;
 			D.Arch = EArch::Hex; D.ArchGap = 3.5f; D.ArchW = 1.04f; D.ArchH = 1.0f; D.FlareMat = SDark; D.FlareOut = 3.5f; D.FlareT = 5.f;
@@ -157,7 +160,8 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 	auto WAt = [&](float xr)
 	{
 		float w = D.Half;
-		for (const FVector& h : D.Haunch) w += h.Y * Sm(1.f - FMath::Abs(xr - h.X) / h.Z);
+		if (!D.bHaunchHigh) for (const FVector& h : D.Haunch) w += h.Y * Sm(1.f - FMath::Abs(xr - h.X) / h.Z);
+		w -= D.ChamF.X * FMath::Pow(FMath::Max(0.f, 1.f - (L - xr) / D.ChamF.Y), 1.6f) + D.ChamR.X * FMath::Pow(FMath::Max(0.f, 1.f - xr / D.ChamR.Y), 1.6f);
 		return w - Corner(L - xr, D.RcF) - Corner(xr, D.RcR);
 	};
 	auto CreaseAt = [&](float xr) { return Z(FMath::Lerp(D.CreaseZR < 0.f ? D.CreaseZ : D.CreaseZR, D.CreaseZ, xr / L)); };
@@ -167,6 +171,7 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		const float t = FMath::Clamp((z - zb - D.Rb) / FMath::Max(1.f, zsh - D.Rs - zb - D.Rb), 0.f, 1.f);
 		float y = WAt(xr) - D.Tuck * FMath::Pow(1.f - t, 3.f) + D.Bulge * 4.f * t * (1.f - t);
 		if (D.CreaseD > 0.f) y += D.CreaseD * FMath::Max(0.f, 1.f - FMath::Abs(z - CreaseAt(xr)) / D.CreaseW);
+		if (D.bHaunchHigh) { const float hi = Sm((z - CreaseAt(xr) + 1.f) / 5.f); for (const FVector& h : D.Haunch) y += hi * h.Y * Sm(1.f - FMath::Abs(xr - h.X) / h.Z); }
 		return y;
 	};
 	auto ArchTop = [&](float dx) -> float
@@ -452,22 +457,23 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 	case 0: // ============================ Clase G
 	{
 		// paragolpes delantero negro envolvente, matrícula, tomas y protector
-		SB(SDark, FVector(xf + 1.5f, 0, Z(55.f)), FVector(7.f, D.Half + 2.f, 11.5f), 0.22f, 8);
-		{ const float xp = xf + 8.6f; Box(SDark, FVector(xp, 0, Z(57.f)), FVector(0.5f, 27.f, 7.f)); Box(SAlu, FVector(xp + 0.6f, 0, Z(57.f)), FVector(0.3f, 26.f, 6.2f)); }
+		// paragolpes del color de la carrocería con tomas de malla negras a los lados y labio negro (según foto del G 500 2018)
+		SB(SPaint, FVector(xf + 2.f, 0, Z(59.f)), FVector(8.f, D.Half + 3.f, 11.f), 0.2f, 8);
+		SB(SDark, FVector(xf + 3.f, 0, Z(47.f)), FVector(7.5f, D.Half - 2.f, 2.6f), 0.3f, 8);
+		{ const float xp = xf + 10.1f; Box(SDark, FVector(xp, 0, Z(60.f)), FVector(0.5f, 27.f, 7.f)); Box(SAlu, FVector(xp + 0.6f, 0, Z(60.f)), FVector(0.3f, 26.f, 6.2f)); }
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			Box(SCarbon, FVector(xf + 8.4f, s * 47.f, Z(52.f)), FVector(0.5f, 15.f, 5.f));
-			for (int32 q = 0; q < 3; ++q) Box(SMetal, FVector(xf + 8.8f, s * 47.f, Z(48.5f) + q * 3.5f), FVector(0.3f, 14.f, 0.4f));
-			B.Cylinder(SChrome, FVector(xf + 8.f, s * 80.f, Z(55.f)), FVector(1, 0, 0), 4.2f, 0.8f, 16, true);   // antiniebla
-			B.Cylinder(SLight, FVector(xf + 8.6f, s * 80.f, Z(55.f)), FVector(1, 0, 0), 3.2f, 0.4f, 16, true);
+			Box(SCarbon, FVector(xf + 9.9f, s * 62.f, Z(55.f)), FVector(0.5f, 17.f, 4.5f));
+			for (int32 r = 0; r < 3; ++r) for (int32 c = 0; c < 9; ++c) Box(SMetal, FVector(xf + 10.3f, s * (47.f + c * 3.7f), Z(52.f) + r * 3.f), FVector(0.25f, 1.2f, 0.9f));
 		}
 		SB(SMetal, FVector(xf - 8.f, 0, Z(41.f)), FVector(14.f, 44.f, 2.f), 0.3f, 6);
 		// parrilla: marco, tres lamas y estrella
 		const float xg = xf + 0.5f;
-		Box(SDark, FVector(xg, 0, Z(96.f)), FVector(0.8f, 36.f, 20.f));
-		Box(SChrome, FVector(xg + 0.6f, 0, Z(116.4f)), FVector(0.6f, 36.6f, 0.7f)); Box(SChrome, FVector(xg + 0.6f, 0, Z(75.6f)), FVector(0.6f, 36.6f, 0.7f));
-		for (int32 s = -1; s <= 1; s += 2) Box(SChrome, FVector(xg + 0.6f, s * 36.2f, Z(96.f)), FVector(0.6f, 0.7f, 20.4f));
-		for (float zz : { 84.f, 96.f, 108.f }) SB(SPaint, FVector(xg + 1.6f, 0, Z(zz)), FVector(1.4f, 35.f, 1.7f), 0.3f, 6);
+		Box(SDark, FVector(xg, 0, Z(96.f)), FVector(0.8f, 52.f, 19.f));
+		Box(SPaint, FVector(xg + 0.6f, 0, Z(115.6f)), FVector(0.9f, 53.f, 1.2f)); Box(SPaint, FVector(xg + 0.6f, 0, Z(76.4f)), FVector(0.9f, 53.f, 1.2f));
+		for (int32 s = -1; s <= 1; s += 2) Box(SPaint, FVector(xg + 0.6f, s * 52.5f, Z(96.f)), FVector(0.9f, 1.2f, 20.f));
+		for (float zz : { 82.f, 89.f, 103.f, 110.f }) Box(SChrome, FVector(xg + 1.3f, 0, Z(zz)), FVector(0.4f, 50.f, 0.6f));
+		for (int32 c = -12; c <= 12; ++c) if (FMath::Abs(c) > 2) Box(SMetal, FVector(xg + 1.1f, c * 4.f, Z(96.f)), FVector(0.3f, 0.4f, 17.f));
 		B.Torus(SChrome, FVector(xg + 3.2f, 0, Z(96.f)), FVector(1, 0, 0), 8.6f, 0.9f, 28, 6);
 		B.Cylinder(SDark, FVector(xg + 2.4f, 0, Z(96.f)), FVector(1, 0, 0), 8.f, 0.8f, 24, true);
 		for (int32 a = 0; a < 3; ++a)
@@ -478,11 +484,11 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		// faros redondos en el frontal de las aletas con aro LED
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			const FVector c(xf, s * 70.f, Z(104.f));
-			B.Cylinder(SPaint, c + FVector(-2.f, 0, 0), FVector(1, 0, 0), 15.f, 4.2f, 28, true);
-			B.Cylinder(SDark, c + FVector(2.1f, 0, 0), FVector(1, 0, 0), 13.2f, 0.6f, 28, true);
-			B.Cylinder(SChrome, c + FVector(2.6f, 0, 0), FVector(1, 0, 0), 12.2f, 0.4f, 28, true);
-			B.Torus(SLight, c + FVector(3.2f, 0, 0), FVector(1, 0, 0), 10.6f, 0.8f, 28, 6);
+			const FVector c(xf, s * 73.f, Z(104.f));
+			B.Cylinder(SPaint, c + FVector(-2.f, 0, 0), FVector(1, 0, 0), 14.f, 4.6f, 28, true);
+			B.Cylinder(SDark, c + FVector(2.5f, 0, 0), FVector(1, 0, 0), 12.4f, 0.6f, 28, true);
+			B.Cylinder(SChrome, c + FVector(3.0f, 0, 0), FVector(1, 0, 0), 11.4f, 0.4f, 28, true);
+			B.Torus(SLight, c + FVector(3.6f, 0, 0), FVector(1, 0, 0), 9.8f, 0.8f, 28, 6);
 			for (int32 q = -1; q <= 1; q += 2) { B.Cylinder(SDark, c + FVector(3.0f, q * 4.f, 0), FVector(1, 0, 0), 3.2f, 0.6f, 16, true); B.Sphere(SChrome, c + FVector(3.4f, q * 4.f, 0), 2.3f, 10); }
 			// intermitentes sobre las aletas (seña de identidad)
 			const float xi = XB(402.f), yi = s * 80.f, zi = HoodZ(402.f, 80.f);
@@ -499,6 +505,12 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 			for (int32 q = 0; q < 3; ++q) SB(SDark, FVector(xa + (xb2 - xa) * (0.15f + 0.35f * q), s * (SY(200.f, 52.f) + 2.f), Z(47.f)), FVector(2.f, 6.f, 2.f), 0.4f, 6);
 			// canalones del techo
 			B.Tube(SDark, { FVector(XB(6.f), s * (0.95f * D.Half + 0.4f), Z(194.f)), FVector(XB(250.f), s * (0.95f * D.Half + 0.4f), Z(194.f)) }, 0.8f, 6);
+		}
+		for (int32 s = -1; s <= 1; s += 2) for (const FVector2D& seg : { FVector2D(6.f, 408.f) })
+		{
+			const float xm = 0.5f * (seg.X + seg.Y);
+			SB(SDark, FVector(XB(xm), s * (SY(xm, 104.f) + 0.7f), Z(104.f)), FVector(0.5f * (seg.Y - seg.X), 1.2f, 1.6f), 0.3f, 6);
+			Box(SChrome, FVector(XB(xm), s * (SY(xm, 104.f) + 1.75f), Z(104.6f)), FVector(0.5f * (seg.Y - seg.X) - 1.f, 0.2f, 0.3f));
 		}
 		Wipers(289.f, 133.f, 32.f);
 		Mirror(276.f, 141.f, SPaint, 5.f, 9.f, 7.f);
@@ -531,7 +543,7 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 			}
 		};
 		// frontal: mitad inferior negra (calandra hexagonal y tomas con marco en "Y" del color de la carrocería), faros finos arriba
-		Skin(true, 55.f, 25.f, D.Half - D.RcF + 2.f, SDark, 0.15f, 0.6f);
+		Skin(true, 56.f, 23.f, D.Half - 30.f, SDark, 0.15f, 0.6f);
 		const float xg = FrontX(0.f, 52.f);
 		// tira que recorre el frontal siguiendo su curva: polilínea (y, z) de serie
 		auto FrontStrip = [&](const TArray<FVector2D>& Pl, int32 Mat, float hz, float out, float th)
@@ -585,7 +597,7 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 			Reset();
 		}
 		SB(SCarbon, FVector(XB(26.f), 0, Z(139.5f)), FVector(8.f, 60.f, 1.3f), 0.35f, 8);               // labio del portón
-		Skin(false, 46.f, 16.f, D.Half - D.RcR + 2.f, SDark, 0.15f, 0.6f);
+		Skin(false, 47.f, 13.f, D.Half - 28.f, SDark, 0.15f, 0.6f);
 		for (int32 q = -3; q <= 3; ++q) Box(SCarbon, FVector(xk + 2.f, q * 9.f, Z(34.f)), FVector(6.f, 0.6f, 4.5f));
 		for (int32 s = -1; s <= 1; s += 2) for (float yy : { 36.f, 47.f })
 		{

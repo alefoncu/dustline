@@ -73,6 +73,8 @@ void ADustlineCar::BeginPlay()
 {
 	Super::BeginPlay();
 	const TCHAR* Cmd = FCommandLine::Get();
+	// la luz del mundo viene sobre todo del cielo y quemaba los colores claros: compensación de exposición en la cámara (-expbias= para probar otros valores)
+	{ float Eb = -1.0f; FParse::Value(Cmd, TEXT("expbias="), Eb); Cam->PostProcessSettings.bOverride_AutoExposureBias = true; Cam->PostProcessSettings.AutoExposureBias = Eb; Cam->PostProcessBlendWeight = 1.f; }
 	int32 Model = 0;
 	if (FParse::Value(Cmd, TEXT("dmodel="), Model)) { Model = FMath::Clamp(Model, 0, NumModels() - 1); Setup = StockSetup(Model); if (!FParse::Param(Cmd, TEXT("stock"))) LoadSetupFromDisk(Model, Setup); Setup.Model = Model; }
 	else { FString Last; if (FFileHelper::LoadFileToString(Last, *(FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("last_model.txt")))) { Model = FMath::Clamp(FCString::Atoi(*Last), 0, NumModels() - 1); Setup = StockSetup(Model); LoadSetupFromDisk(Model, Setup); Setup.Model = Model; } }
