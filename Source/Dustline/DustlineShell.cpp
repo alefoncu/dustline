@@ -1,7 +1,7 @@
 #include "DustlineCar.h"
 #include "DustlineCarParts.h"
 
-// Carrocerías v2 (Clase G, Urus, Panda 4x4, Defender): cada modelo se describe con sus cotas reales
+// Carrocerías v2 (Clase G, Panda 4x4, Defender, pick-up, crawler): cada modelo se describe con sus cotas reales
 // (perfil del techo/capó, línea de cintura, bajos, anchura en planta con esquinas redondeadas, voladizos),
 // y se genera por secciones transversales: bajos, pasos de rueda con la forma propia del modelo, costado con
 // pliegue, hombro, cintura, ventanas hundidas con juntas, pilares, techo y lunas. Luego, frontal y trasera propios.
@@ -61,23 +61,6 @@ namespace
 			D.Arch = EArch::Round; D.ArchGap = 7.f; D.FlareMat = SPaint; D.FlareOut = 8.f; D.FlareT = 8.f;
 			D.Win = V2({ 9,90, 109,174, 195,272 }); D.TopGlass = V2({ 256,288 }); D.Frame = 13.5f; D.FrameBot = 2.5f;
 			D.Gaps = V2({ 101,1, 184.5f,1, 286,0 });
-			break;
-		case 1: // Lamborghini Urus: 5,11 m, morro bajo, parabrisas muy tumbado, techo de coupé, cola alta, pasos hexagonales
-			D.XOff = -3.5f; D.bSmoothTop = true;
-			// según fotos: cola alta con luna corta y empinada que acaba en alerón (~1,28 m) y portón vertical; hombro muy ancho
-			// sobre la rueda trasera con habitáculo estrecho encima; mitad inferior de frontal/trasera, faldones y pasos en negro
-			D.Top = V2({ 0,128, 3,134, 10,137, 22,138.5f, 30,139.5f, 40,141, 70,148, 110,154, 150,158, 190,162, 220,164, 265,164, 295,162.5f, 310,160, 368,120, 380,118, 420,112, 460,104, 490,98, 503,95, 509,92, 511,88 });
-			D.Sh = V2({ 0,137, 60,138, 128,137, 167,129, 261,121, 331,118, 368,117, 511,100 });
-			D.Bot = V2({ 0,36, 15,32, 40,30, 470,30, 500,30, 511,31 });
-			D.Half = 100.f; D.RcF = 18.f; D.RcR = 20.f;
-			D.Haunch = { FVector(118.f, 8.f, 100.f), FVector(409.f, 4.f, 70.f) }; D.bHaunchHigh = true;
-			D.ChamF = FVector2D(22.f, 48.f); D.ChamR = FVector2D(8.f, 30.f);
-			D.RoofIn = 0.64f; D.BeltStep = 9.f; D.Rb = 5.f; D.Rs = 6.f; D.Rr = 9.f; D.CrownH = -2.5f; D.CrownR = 5.f; D.Bulge = 2.f; D.Tuck = 6.f;
-			D.CreaseZ = 82.f; D.CreaseZR = 95.f; D.CreaseD = 2.0f; D.CreaseW = 3.f; D.CladZ = 47.f; D.bNoseDark = true; D.SmoothDeg = 34.f;
-			D.Arch = EArch::Hex; D.ArchGap = 3.5f; D.ArchW = 1.04f; D.ArchH = 1.0f; D.FlareMat = SDark; D.FlareOut = 3.5f; D.FlareT = 5.f;
-			D.Win = V2({ 128,160, 168,250, 260,345 }); D.DarkPil = V2({ 250,260, 160,168 }); D.TopGlass = V2({ 40,150, 310,368 });
-			D.Gaps = V2({ 164,1, 255,1, 372,0 });
-			D.RoofMat = SCarbon; D.FrameMat = SDark; D.Frame = 2.5f;
 			break;
 		case 2: // Fiat Panda 4x4 (2012+): 3,68 m, alto y corto, morro corto, formas "squircle", revestimientos negros
 			D.XOff = 2.5f; D.bSmoothTop = true;
@@ -529,82 +512,6 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		Plate(false, 76.f);
 		Spare(xk - 14.f, 0.f, 126.f, 38.f);
 		B.Cylinder(SChrome, FVector(xk - 27.f, 0, Z(126.f)), FVector(-1, 0, 0), 9.f, 1.f, 24, true);
-		break;
-	}
-	case 1: // ============================ Urus
-	{
-		// banda que sigue la curva en planta del frontal/trasera (láminas orientadas con la superficie)
-		auto Skin = [&](bool bFront, float zs, float hz, float yMax, int32 Mat, float out, float th)
-		{
-			for (float y = -yMax; y <= yMax + 0.01f; y += 2.f)
-			{
-				float xo; const FRotator r = OnEnd(bFront, y, zs, out, xo, 1.5f);
-				At(FVector(xo, y, Z(zs)), r); Box(Mat, FVector(0), FVector(th, 1.6f, hz)); Reset();
-			}
-		};
-		// frontal: mitad inferior negra (calandra hexagonal y tomas con marco en "Y" del color de la carrocería), faros finos arriba
-		Skin(true, 56.f, 23.f, D.Half - 30.f, SDark, 0.15f, 0.6f);
-		const float xg = FrontX(0.f, 52.f);
-		// tira que recorre el frontal siguiendo su curva: polilínea (y, z) de serie
-		auto FrontStrip = [&](const TArray<FVector2D>& Pl, int32 Mat, float hz, float out, float th)
-		{
-			for (int32 k = 0; k + 1 < Pl.Num(); ++k)
-			{
-				const FVector2D A = Pl[k], Bp = Pl[k + 1]; const float len = (Bp - A).Size(); const int32 n = FMath::Max(1, FMath::CeilToInt(len / 2.5f));
-				const float roll = FMath::RadiansToDegrees(FMath::Atan2(Bp.Y - A.Y, Bp.X - A.X));
-				for (int32 q = 0; q < n; ++q)
-				{
-					const FVector2D P0 = FMath::Lerp(A, Bp, (q + 0.5f) / n); float xo; const FRotator r = OnEnd(true, P0.X, P0.Y, out, xo, 1.5f);
-					At(FVector(xo, P0.X, Z(P0.Y)), r); B.Xf = FTransform(FRotator(0.f, 0.f, -roll)) * B.Xf; Box(Mat, FVector(0), FVector(th, 0.5f * len / n + 0.15f, hz)); Reset();
-				}
-			}
-		};
-		// calandra hexagonal en la franja alta, lámina en "V" del color de la carrocería, tomas con 3 lamas, aletas del splitter
-		for (int32 r = 0; r < 3; ++r) for (int32 c = -12; c <= 12; ++c)
-		{
-			const float yy = c * 5.2f + ((r & 1) ? 2.6f : 0.f); if (FMath::Abs(yy) > 60.f) continue;
-			B.Prism(SCarbon, FVector(FrontX(yy, 66.f) + 0.6f, yy, Z(62.5f) + r * 4.6f), FVector(1, 0, 0), 2.5f, 1.2f, 6, 0.f);
-		}
-		FrontStrip({ FVector2D(-95.f, 74.f), FVector2D(-72.f, 59.f), FVector2D(72.f, 59.f), FVector2D(95.f, 74.f) }, SPaint, 1.7f, 1.0f, 1.2f);
-		for (int32 s = -1; s <= 1; s += 2) for (float zz : { 41.f, 47.5f, 54.f })
-			FrontStrip({ FVector2D(s * 70.f, zz - 1.f), FVector2D(s * 92.f, zz + 3.f) }, SPaint, 0.9f, 0.9f, 1.f);
-		for (int32 q = -3; q <= 3; ++q) if (q) { const float yy = q * 12.f; SB(SPaint, FVector(FrontX(yy, 33.f) + 1.5f, yy, Z(33.f)), FVector(3.f, 0.9f, 3.5f), 0.4f, 6); }
-		for (int32 s = -1; s <= 1; s += 2)
-		{
-			float xo; FRotator r;
-			// faro: carcasa fina inclinada con firma LED en "Y"
-			r = OnEnd(true, s * 70.f, 91.f, 0.3f, xo, 14.f);
-			At(FVector(xo, s * 70.f, Z(91.f)), r + FRotator(0.f, 0.f, s * -6.f));
-			SB(SDark, FVector(0), FVector(2.0f, 21.f, 3.4f), 0.35f, 8);
-			SB(SLight, FVector(0.9f, s * -2.f, 1.1f), FVector(1.3f, 17.f, 0.8f), 0.45f, 6);
-			At(FVector(xo + 0.6f, s * 82.f, Z(90.f)), r + FRotator(0.f, 0.f, s * -40.f)); SB(SLight, FVector(0), FVector(1.2f, 5.5f, 0.6f), 0.45f, 6);
-			Reset();
-		}
-		SB(SCarbon, FVector(FrontX(0.f, 32.f) + 2.5f, 0, Z(30.5f)), FVector(7.f, 84.f, 1.8f), 0.3f, 8);
-		for (int32 s = -1; s <= 1; s += 2) SB(SPaint, FVector(XB(440.f), s * 30.f, HoodZ(440.f, 30.f) + 0.4f), FVector(55.f, 1.2f, 0.7f), 0.4f, 6);   // nervios del capó
-		Wipers(367.f, 120.f, 36.f);
-		Mirror(352.f, 124.f, SCarbon, 5.5f, 9.5f, 6.f);
-		Handle(SDark, 242.f, 113.f, 7.f); Handle(SDark, 166.f, 118.f, 7.f);
-		// trasera: banda negra con la luz roja de lado a lado y pilotos en "Y", alerones, difusor negro con doble salida a cada lado
-		Skin(false, 119.f, 5.5f, D.Half - 11.f, SCarbon, 0.5f, 0.9f);
-		Box(STail, FVector(RearX(0.f, 119.f) - 1.2f, 0, Z(119.f)), FVector(0.5f, 60.f, 0.6f));
-		for (int32 s = -1; s <= 1; s += 2)
-		{
-			float xo; FRotator r = OnEnd(false, s * 80.f, 119.f, 1.2f, xo, 10.f);
-			At(FVector(xo, s * 80.f, Z(119.f)), r); SB(STail, FVector(0, s * -8.f, 0.f), FVector(0.6f, 12.f, 0.9f), 0.4f, 6);
-			At(FVector(xo, s * 88.f, Z(121.5f)), r + FRotator(0.f, 0.f, s * 30.f)); SB(STail, FVector(0), FVector(0.6f, 6.f, 0.9f), 0.4f, 6);
-			At(FVector(xo, s * 88.f, Z(116.5f)), r + FRotator(0.f, 0.f, s * -30.f)); SB(STail, FVector(0), FVector(0.6f, 6.f, 0.9f), 0.4f, 6);
-			Reset();
-		}
-		SB(SCarbon, FVector(XB(26.f), 0, Z(139.5f)), FVector(8.f, 60.f, 1.3f), 0.35f, 8);               // labio del portón
-		Skin(false, 47.f, 13.f, D.Half - 28.f, SDark, 0.15f, 0.6f);
-		for (int32 q = -3; q <= 3; ++q) Box(SCarbon, FVector(xk + 2.f, q * 9.f, Z(34.f)), FVector(6.f, 0.6f, 4.5f));
-		for (int32 s = -1; s <= 1; s += 2) for (float yy : { 36.f, 47.f })
-		{
-			B.Cylinder(SChrome, FVector(xk + 4.f, s * yy, Z(41.f)), FVector(-1, 0, 0), 4.8f, 8.f, 18, true);
-			B.Cylinder(SDark, FVector(xk + 4.f, s * yy, Z(41.f)), FVector(-1, 0, 0), 3.8f, 8.3f, 18, true);
-		}
-		Plate(false, 80.f);
 		break;
 	}
 	case 2: // ============================ Panda 4x4

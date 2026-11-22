@@ -26,12 +26,13 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
-static FString SetupPath(int32 Model) { return FPaths::ProjectSavedDir() / TEXT("Garage") / FString::Printf(TEXT("setup_%d.json"), Model); }
+// el fichero va por estilo de carrocería (no por posición en la lista), así quitar o reordenar modelos no mezcla ajustes
+static FString SetupPath(int32 Model) { return FPaths::ProjectSavedDir() / TEXT("Garage") / FString::Printf(TEXT("setup_%d.json"), ADustlineCar::GetModel(Model).Style); }
 
 void ADustlineCar::SaveSetupToDisk() const
 {
 	FString Json; if (FJsonObjectConverter::UStructToJsonObjectString(Setup, Json)) FFileHelper::SaveStringToFile(Json, *SetupPath(Setup.Model));
-	FFileHelper::SaveStringToFile(FString::FromInt(Setup.Model), *(FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("last_model.txt")));
+	FFileHelper::SaveStringToFile(FString::FromInt(GetModel(Setup.Model).Style), *(FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("last_model.txt")));
 }
 bool ADustlineCar::LoadSetupFromDisk(int32 Model, FDustlineSetup& Out)
 {
@@ -428,7 +429,7 @@ void ADustlineCar::EngineTest()
 		Phase = N;
 		static const float CC[] = { 1600.f, 2400.f, 3200.f, 4000.f, 5700.f, 7000.f, 9000.f };
 		static const float TB[] = { 0.f, 0.6f, 1.2f, 1.8f, 2.4f, 3.0f };
-		if (N == 0) { SelectModel(3); OpenGarage(); GarageFocus = 1; SetXRay(true); }
+		if (N == 0) { SelectModel(2); OpenGarage(); GarageFocus = 1; SetXRay(true); }
 		if (N < 7) { Setup.EngineCC = CC[N]; Setup.Turbo = 0.f; bSetupDirty = true; }
 		else if (N < 13) { Setup.EngineCC = 4000.f; Setup.Turbo = TB[N - 7]; bSetupDirty = true; }
 		else FPlatformMisc::RequestExit(false);

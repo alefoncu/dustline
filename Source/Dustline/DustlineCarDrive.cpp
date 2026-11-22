@@ -66,7 +66,7 @@ void ADustlineCar::ComputeSpec()
 	Sp.RestLen = Setup.TravelM;
 	const float L = M.L / 100.f, Wd = M.W / 100.f, H = M.H / 100.f;
 	Sp.Inertia[0] = Sp.Mass / 12.f * (H * H + L * L) * 1.1f; Sp.Inertia[1] = Sp.Mass / 12.f * (Wd * Wd + L * L) * 1.1f; Sp.Inertia[2] = Sp.Mass / 12.f * (Wd * Wd + H * H) * 1.3f;
-	Sp.Cd = M.Style == 1 ? 0.95f : (M.Style == 4 ? 0.7f : 1.1f);
+	Sp.Cd = M.Style == 4 ? 0.7f : 1.1f;
 }
 
 void ADustlineCar::BeginPlay()
@@ -77,7 +77,7 @@ void ADustlineCar::BeginPlay()
 	{ float Eb = -1.0f; FParse::Value(Cmd, TEXT("expbias="), Eb); Cam->PostProcessSettings.bOverride_AutoExposureBias = true; Cam->PostProcessSettings.AutoExposureBias = Eb; Cam->PostProcessBlendWeight = 1.f; }
 	int32 Model = 0;
 	if (FParse::Value(Cmd, TEXT("dmodel="), Model)) { Model = FMath::Clamp(Model, 0, NumModels() - 1); Setup = StockSetup(Model); if (!FParse::Param(Cmd, TEXT("stock"))) LoadSetupFromDisk(Model, Setup); Setup.Model = Model; }
-	else { FString Last; if (FFileHelper::LoadFileToString(Last, *(FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("last_model.txt")))) { Model = FMath::Clamp(FCString::Atoi(*Last), 0, NumModels() - 1); Setup = StockSetup(Model); LoadSetupFromDisk(Model, Setup); Setup.Model = Model; } }
+	else { FString Last; if (FFileHelper::LoadFileToString(Last, *(FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("last_model.txt")))) { { const int32 St = FCString::Atoi(*Last); Model = 0; for (int32 i = 0; i < NumModels(); ++i) if (GetModel(i).Style == St) Model = i; } Setup = StockSetup(Model); LoadSetupFromDisk(Model, Setup); Setup.Model = Model; } }
 	if (FParse::Param(Cmd, TEXT("autodrive"))) bAutoDrive = true;
 	FString W; if (FParse::Value(Cmd, TEXT("dweather="), W)) { if (W == TEXT("rain")) { GWet = 1.f; } else if (W == TEXT("snow")) { GSnow = 1.f; } }
 	Rebuild(); LastSetup = Setup; PaintShown = Setup.Paint; bHaveLast = true;
@@ -272,7 +272,7 @@ void ADustlineCar::Tick(float DeltaTime)
 		auto Shot = [&](int32 n) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("/Volumes/SSD/UE-Cache/gd_%d.png"), n), true, false); };
 		if (Step == 0 && Clock > 4.f) { ToggleGarage(); Step = 1; }
 		else if (Step == 1 && Clock > 11.f) { Shot(1); Step = 2; }
-		else if (Step == 2 && Clock > 12.f) { SelectModel(2); Setup.EngineCC = 7000.f; Setup.Turbo = 3.f; GarageFocus = 1; SetXRay(true); bSetupDirty = true; Step = 3; }
+		else if (Step == 2 && Clock > 12.f) { SelectModel(1); Setup.EngineCC = 7000.f; Setup.Turbo = 3.f; GarageFocus = 1; SetXRay(true); bSetupDirty = true; Step = 3; }
 		else if (Step == 3 && Clock > 20.f) { Shot(2); Step = 4; }
 		else if (Step == 4 && Clock > 21.f) { Setup.TireType = 3; Setup.TireRadiusM = 0.52f; Setup.TireWidthM = 0.35f; GarageFocus = 2; SetXRay(false); bSetupDirty = true; Step = 5; }
 		else if (Step == 5 && Clock > 28.f) { Shot(3); Step = 6; }

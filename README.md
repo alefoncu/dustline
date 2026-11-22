@@ -7,7 +7,7 @@ Juego de conducción **off-road de mundo abierto** para macOS, hecho con Unreal 
 ## Qué hay
 
 - **Mundo** de unos 4 × 4 km generado por código (ruido fractal + erosión hidráulica), con lagos, ~27 000 abetos propios de bajo poligonaje, rocas, troncos y material de terreno automático (hierba, tierra, barro, arena, roca, nieve).
-- **7 coches** (Clase G, Urus, Panda 4x4, Defender, Buggy, Pick-up, Rock Crawler) con carrocerías CC0 de Kenney y **piezas propias generadas por código**: ruedas (carretera, todo terreno, barro, clavos, balón), suspensión, transmisión, motor (en línea o en V según la cilindrada) y turbo.
+- **6 coches** (Clase G, Panda 4x4, Defender, Buggy, Pick-up, Rock Crawler) con **carrocerías y piezas propias generadas por código**: ruedas (carretera, todo terreno, barro, clavos, balón), suspensión, transmisión, motor (en línea o en V según la cilindrada) y turbo.
 - **Física propia** del vehículo (suspensión por trazado, neumáticos por superficie, motor con curva de potencia y turbo con retardo, agua, barro, nieve, colisiones).
 - **Interfaz estilo Apple** (Slate propio): menú principal sobre la escena viva, pausa, ajustes (gráficos, juego, controles), velocímetro con cristal esmerilado y taller de piezas (motores, turbos, ruedas, neumáticos, suspensiones, tracción, chasis y pintura). Tipografía SF del sistema (no se distribuye con el juego).
 - **Taller de piezas** (tecla **G** o «Configurar coche»): eliges entre catálogos de motor, turbo, ruedas, neumáticos, suspensión, tracción, chasis y pintura, y ves la pieza al instante (rayos X); o conduces el coche de serie.
@@ -37,7 +37,7 @@ El mapa (`Content/Maps/*.umap`) **no se versiona**: se regenera con `tools/rebui
 
 ```bash
 tools/rebuild_world.sh          # regenera el mapa
-tools/play.sh 0                 # juega (0-6 = modelo de coche) en el editor, sin empaquetar
+tools/play.sh 0                 # juega (0-5 = modelo de coche) en el editor, sin empaquetar
 tools/ship.sh "mensaje"         # commit + push + empaquetar + instalar en /Applications
 ```
 

@@ -16,13 +16,12 @@ static const FKen GKen[] = {
 	{ TEXT("/Game/Cars/Kenney/kart_oobi/kart-oobi.kart-oobi"),         47,  71,  68, 21, 38, 32, -36, 11 },
 	{ TEXT("/Game/Cars/Kenney/van/body.body"),                         75, 138, 135, 30, 43, 76, -76, -2 },
 };
-// model index -> Kenney body: G=suv, Urus=suv_luxury, Panda=hatchback, Defender=van, Buggy=kart, Pickup=truck, Crawler=tractor
-static const int32 GKenIdx[] = { 0, 1, 2, 6, 5, 3, 4 };
+// model index -> Kenney body: G=suv, Panda=hatchback, Defender=van, Buggy=kart, Pickup=truck, Crawler=tractor
+static const int32 GKenIdx[] = { 0, 2, 6, 5, 3, 4 };
 
 
 static const FDustlineModel GModels[] = {
 	{ TEXT("Clase G"),          0, 415, 188, 198, 289, 2450, 4000, 1.0f, 0.40f, 0.285f, 0.55f, 1.1f, 1, 0, { FLinearColor(0.28f,0.29f,0.31f), FLinearColor(0.02f,0.02f,0.025f), FLinearColor(0.03f,0.17f,0.07f) } },
-	{ TEXT("Urus"),             1, 511, 204, 164, 300, 2200, 4000, 1.6f, 0.41f, 0.325f, 0.42f, 1.5f, 1, 0, { FLinearColor(0.62f,0.34f,0.008f), FLinearColor(0.55f,0.025f,0.015f), FLinearColor(0.02f,0.02f,0.03f) } },
 	{ TEXT("Panda 4x4"),        2, 368, 164, 158, 230,  980,  900, 0.0f, 0.32f, 0.185f, 0.42f, 0.8f, 1, 0, { FLinearColor(0.60f,0.60f,0.58f), FLinearColor(0.50f,0.025f,0.025f), FLinearColor(0.03f,0.15f,0.45f) } },
 	{ TEXT("Defender cl\u00E1sico"), 3, 420, 179, 190, 279, 1850, 2500, 0.6f, 0.42f, 0.235f, 0.62f, 0.9f, 1, 0, { FLinearColor(0.07f,0.12f,0.04f), FLinearColor(0.60f,0.55f,0.40f), FLinearColor(0.32f,0.03f,0.02f) } },
 	{ TEXT("Buggy"),            4, 335, 185, 172, 255,  780, 1600, 1.0f, 0.40f, 0.270f, 0.80f, 0.85f, 1, 0, { FLinearColor(0.95f,0.68f,0.01f), FLinearColor(0.55f,0.45f,0.30f), FLinearColor(0.75f,0.03f,0.02f) } },
@@ -67,14 +66,14 @@ float ADustlineCar::BodyH() const
 	return M.H + FMath::Max(0.f, GroundClearance() - stock);
 }
 float ADustlineCar::GroundClearance() const { if (bKen) return KBodyZ + 22.f * KSz; return 0.40f * Setup.TireRadiusM * 100.f + 0.28f * Setup.TravelM * 100.f; }
-float ADustlineCar::FrontX() const { return bKen ? GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, 6)]].FrontY * KSy : GetModel(Setup.Model).Wheelbase * 0.5f; }
-float ADustlineCar::RearX() const { return bKen ? GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, 6)]].BackY * KSy : -GetModel(Setup.Model).Wheelbase * 0.5f; }
-float ADustlineCar::BodyFront() const { if (!bKen) return GetModel(Setup.Model).L * 0.5f + DustlineBodyXOff(GetModel(Setup.Model).Style); const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, 6)]]; return (K.OY + K.Ey) * KSy; }
+float ADustlineCar::FrontX() const { return bKen ? GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, (int32)UE_ARRAY_COUNT(GKenIdx) - 1)]].FrontY * KSy : GetModel(Setup.Model).Wheelbase * 0.5f; }
+float ADustlineCar::RearX() const { return bKen ? GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, (int32)UE_ARRAY_COUNT(GKenIdx) - 1)]].BackY * KSy : -GetModel(Setup.Model).Wheelbase * 0.5f; }
+float ADustlineCar::BodyFront() const { if (!bKen) return GetModel(Setup.Model).L * 0.5f + DustlineBodyXOff(GetModel(Setup.Model).Style); const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, (int32)UE_ARRAY_COUNT(GKenIdx) - 1)]]; return (K.OY + K.Ey) * KSy; }
 void ADustlineCar::ComputeKenney()
 {
 	bKen = false;
 	if (!bUseKenney) return;
-	const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, 6)]];
+	const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, (int32)UE_ARRAY_COUNT(GKenIdx) - 1)]];
 	if (!LoadObject<UStaticMesh>(nullptr, K.Mesh)) return;
 	const FDustlineModel& M = GetModel(Setup.Model);
 	const float R = Setup.TireRadiusM * 100.f, Tcm = Setup.TravelM * 100.f;
@@ -88,7 +87,7 @@ void ADustlineCar::ComputeKenney()
 FVector ADustlineCar::WheelPos(int32 I) const
 {
 	const FDustlineModel& M = GetModel(Setup.Model);
-	if (bKen) { const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, 6)]]; return FVector((I < 2 ? K.FrontY : K.BackY) * KSy, ((I % 2) == 0 ? -1.f : 1.f) * K.ArchX * KSx, Setup.TireRadiusM * 100.f); }
+	if (bKen) { const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, (int32)UE_ARRAY_COUNT(GKenIdx) - 1)]]; return FVector((I < 2 ? K.FrontY : K.BackY) * KSy, ((I % 2) == 0 ? -1.f : 1.f) * K.ArchX * KSx, Setup.TireRadiusM * 100.f); }
 	const float x = (I < 2 ? 1.f : -1.f) * M.Wheelbase * 0.5f;
 	// neumáticos grandes: se ensancha la vía (ruedas hacia fuera) en vez de estrechar la carrocería
 	const float Wd = Setup.TireWidthM * 100.f, Rc = Setup.TireRadiusM * 100.f, Tw = FMath::SmoothStep(40.f, 50.f, Rc);
@@ -161,7 +160,7 @@ void ADustlineCar::Rebuild()
 
 void ADustlineCar::BuildBodyKen()
 {
-	const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, 6)]];
+	const FKen& K = GKen[GKenIdx[FMath::Clamp(Setup.Model, 0, (int32)UE_ARRAY_COUNT(GKenIdx) - 1)]];
 	Body->ClearAllMeshSections();
 	KBody->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, K.Mesh));
 	KBody->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));

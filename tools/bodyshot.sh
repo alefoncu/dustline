@@ -1,5 +1,5 @@
 #!/bin/bash
-# uso: tools/bodyshot.sh <modelo 0-6>  -> /Volumes/SSD/UE-Cache/bd_sheet_N.png (4 ángulos del coche de serie)
+# uso: tools/bodyshot.sh <modelo 0-5>  -> /Volumes/SSD/UE-Cache/bd_sheet_N.png (4 ángulos del coche de serie)
 M="$1"; rm -f /Volumes/SSD/UE-Cache/bd_${M}_*.png
 (/Volumes/SSD/Dustline-UE/tools/play.sh "$M" -nomenu -bodytest "-bodymodel=$M" -stock "-camzoom=${ZOOM:-1}" > /Volumes/SSD/UE-Cache/uidemo.log 2>&1 &)
 sleep 5; for i in $(seq 1 90); do [ -f /Volumes/SSD/UE-Cache/bd_${M}_r34.png ] && break; sleep 3; done; sleep 2; pkill -f UnrealEditor
