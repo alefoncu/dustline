@@ -403,8 +403,11 @@ void ADustlineCar::BodyTest()
 	int32 BM = -1; FParse::Value(FCommandLine::Get(), TEXT("bodymodel="), BM);
 	const float Per = 14.f; const int32 Mi = BM >= 0 ? BM : (int32)(T / Per); const float Lt = FMath::Fmod(T, Per);
 	if (Mi >= NumModels() || (BM >= 0 && T >= Per)) { FPlatformMisc::RequestExit(false); return; }
-	static const float Ang[] = { 0.62f, 1.5708f, 0.f, 2.5f };
-	static const TCHAR* Tag[] = { TEXT("f34"), TEXT("side"), TEXT("front"), TEXT("r34") };
+	static const bool bOrtho = FParse::Param(FCommandLine::Get(), TEXT("bodyortho"));
+	static const float AngP[] = { 0.62f, 1.5708f, 0.f, 2.5f }, AngO[] = { 0.62f, 1.5708f, 0.f, 3.75f };
+	static const TCHAR* TagP[] = { TEXT("f34"), TEXT("side"), TEXT("front"), TEXT("r34") };
+	static const TCHAR* TagO[] = { TEXT("o34"), TEXT("oside"), TEXT("ofront"), TEXT("orear") };
+	const float* Ang = bOrtho ? AngO : AngP; const TCHAR* const* Tag = bOrtho ? TagO : TagP;
 	const int32 Step = (int32)(Lt / 3.5f); const float St = FMath::Fmod(Lt, 3.5f);
 	if (Phase != Mi * 10 + Step)
 	{
@@ -498,6 +501,16 @@ void ADustlineCar::UpdateGarageCamera(float Dt)
 	{
 		GarageOrbit += Dt * 0.25f * OrbitSpeed;
 		static const float Zoom = [] { float z = 1.f; FParse::Value(FCommandLine::Get(), TEXT("camzoom="), z); return FMath::Clamp(z, 0.3f, 2.f); }();
+		static const bool bOrtho = FParse::Param(FCommandLine::Get(), TEXT("bodyortho"));
+		if (bOrtho)
+		{
+			// casi ortográfica: cámara lejana a media altura y campo de visión estrecho, escala fija 560 cm de ancho de imagen
+			const float d = 2400.f;
+			Tgt = W(FVector(0, 0, 100.f)); Pos = W(FVector(FMath::Cos(GarageOrbit) * d, FMath::Sin(GarageOrbit) * d, 100.f));
+			Cam->SetFieldOfView(2.f * FMath::RadiansToDegrees(FMath::Atan(280.f / d)));
+			GarageCamPos = Pos; GarageCamTgt = Tgt; bGarageCamInit = true;
+			break;
+		}
 		const float d = (M.L * 1.05f + 360.f) * Zoom;
 		Tgt = W(FVector(0, 0, M.H * 0.45f));
 		Pos = W(FVector(FMath::Cos(GarageOrbit) * d, FMath::Sin(GarageOrbit) * d, M.H * 0.55f + 120.f * Zoom));

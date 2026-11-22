@@ -29,6 +29,7 @@ namespace
 		float RoofIn = 0.9f, BeltStep = 2.f, Rb = 3.f, Rs = 4.f, Rr = 5.f, CrownH = 1.5f, CrownR = 2.f, Bulge = 0.5f, Tuck = 2.f;
 		float CreaseZ = 0.f, CreaseZR = -1.f, CreaseD = 0.f, CreaseW = 4.f;   // pliegue lateral (delante / detrás)
 		float CladZ = 0.f;                             // revestimiento negro inferior
+		bool bNoseDark = false;                        // morro negro hasta el pliegue, delante de la rueda delantera
 		float SmoothDeg = 30.f;
 		EArch Arch = EArch::Round; float ArchGap = 5.f, ArchW = 1.f, ArchH = 1.f, ArchRc = 0.3f;
 		int32 FlareMat = -1; float FlareOut = 5.f, FlareT = 6.f;
@@ -36,6 +37,7 @@ namespace
 		TArray<FVector2D> Gaps;                        // (x, 1 = sube hasta el techo)
 		int32 BeltMat = SPaint, RoofMat = SPaint, FrameMat = SPaint;
 		float Frame = 3.f;                             // chapa entre el cristal y el borde del techo
+		float FrameBot = 0.6f;                         // chapa entre la cintura y el cristal
 	};
 
 	TArray<FVector2D> V2(std::initializer_list<float> L) { TArray<FVector2D> R; const float* p = L.begin(); for (size_t i = 0; i + 1 < L.size(); i += 2) R.Add(FVector2D(p[i], p[i + 1])); return R; }
@@ -46,44 +48,45 @@ namespace
 		switch (St)
 		{
 		case 0: // Mercedes Clase G (W463A): caja de 4,66 m, capó plano a 1,27 m, parabrisas casi vertical, techo a 1,97 m
-			D.XOff = -12.5f;
-			D.Top = V2({ 0,186, 1,192, 3,195.5f, 6,197, 308,197, 312,196, 315,193, 339,131, 342,128.5f, 346,127.5f, 440,127, 458,126, 463,125, 466,121 });
-			D.Sh = V2({ 0,129, 466,129 });
-			D.Bot = V2({ 0,48, 12,40, 40,36, 430,36, 455,40, 466,48 });
+			// cotas medidas sobre foto lateral (G 63, Ginebra 2018): chapa de 4,15 m, voladizos 64/62, techo 198, ventanas 129-180
+			D.XOff = -1.f;
+			D.Top = V2({ 0,187, 1,193, 3,196.5f, 6,198, 248,198, 251,196.5f, 254,192, 256,188, 288,132, 292,131, 330,129, 380,126, 405,123.5f, 411,122, 415,118 });
+			D.Sh = V2({ 0,127, 286,127, 288,132, 415,132 });
+			D.Bot = V2({ 0,54, 8,49, 30,48, 390,48, 405,50, 415,56 });
 			D.Half = 94.f; D.RcF = 7.f; D.RcR = 5.f;
 			D.RoofIn = 0.95f; D.BeltStep = 1.5f; D.Rb = 3.f; D.Rs = 3.5f; D.Rr = 4.5f; D.CrownH = 1.5f; D.CrownR = 2.f; D.Bulge = 0.6f; D.Tuck = 2.5f;
-			D.CreaseZ = 102.f; D.CreaseD = 0.8f; D.CreaseW = 3.f; D.SmoothDeg = 22.f;
-			D.Arch = EArch::Round; D.ArchGap = 5.f; D.FlareMat = SPaint; D.FlareOut = 6.f; D.FlareT = 5.f;
-			D.Win = V2({ 55,148, 162,240, 250,322 }); D.TopGlass = V2({ 313,342 }); D.Frame = 7.f;
-			D.Gaps = V2({ 155,1, 245,1, 338,0 });
+			D.CreaseZ = 104.f; D.CreaseD = 1.0f; D.CreaseW = 3.f; D.SmoothDeg = 22.f;
+			D.Arch = EArch::Round; D.ArchGap = 7.f; D.FlareMat = SPaint; D.FlareOut = 6.f; D.FlareT = 6.f;
+			D.Win = V2({ 9,90, 109,174, 195,272 }); D.TopGlass = V2({ 256,288 }); D.Frame = 13.5f; D.FrameBot = 2.5f;
+			D.Gaps = V2({ 101,1, 184.5f,1, 286,0 });
 			break;
 		case 1: // Lamborghini Urus: 5,11 m, morro bajo, parabrisas muy tumbado, techo de coupé, cola alta, pasos hexagonales
 			D.XOff = -3.5f; D.bSmoothTop = true;
 			// según fotos: cola alta con luna corta y empinada que acaba en alerón (~1,28 m) y portón vertical; hombro muy ancho
 			// sobre la rueda trasera con habitáculo estrecho encima; mitad inferior de frontal/trasera, faldones y pasos en negro
-			D.Top = V2({ 0,117, 4,123, 14,126, 30,128.5f, 38,130, 60,138, 90,147, 125,155, 170,161, 230,164, 275,164, 305,162, 318,159, 398,108, 420,106, 455,104, 485,102, 500,100, 507,97, 511,93 });
-			D.Sh = V2({ 0,129, 40,128, 70,122, 100,117, 160,112, 260,107.5f, 330,105.5f, 398,105, 511,101 });
+			D.Top = V2({ 0,128, 3,134, 10,137, 22,138.5f, 30,139.5f, 40,141, 70,148, 110,154, 150,158, 190,162, 220,164, 265,164, 295,162.5f, 310,160, 368,120, 380,118, 420,112, 460,104, 490,98, 503,95, 509,92, 511,88 });
+			D.Sh = V2({ 0,137, 60,138, 128,137, 167,129, 261,121, 331,118, 368,117, 511,100 });
 			D.Bot = V2({ 0,40, 15,33, 40,30, 470,30, 500,34, 511,40 });
 			D.Half = 100.f; D.RcF = 32.f; D.RcR = 24.f;
 			D.Haunch = { FVector(112.f, 7.f, 95.f), FVector(409.f, 3.f, 65.f) };
 			D.RoofIn = 0.64f; D.BeltStep = 9.f; D.Rb = 5.f; D.Rs = 6.f; D.Rr = 9.f; D.CrownH = -2.5f; D.CrownR = 5.f; D.Bulge = 2.f; D.Tuck = 6.f;
-			D.CreaseZ = 82.f; D.CreaseZR = 100.f; D.CreaseD = 2.0f; D.CreaseW = 3.f; D.CladZ = 50.f; D.SmoothDeg = 34.f;
+			D.CreaseZ = 82.f; D.CreaseZR = 95.f; D.CreaseD = 2.0f; D.CreaseW = 3.f; D.CladZ = 47.f; D.bNoseDark = true; D.SmoothDeg = 34.f;
 			D.Arch = EArch::Hex; D.ArchGap = 3.5f; D.ArchW = 1.04f; D.ArchH = 1.0f; D.FlareMat = SDark; D.FlareOut = 3.5f; D.FlareT = 5.f;
-			D.Win = V2({ 104,156, 166,244, 254,330 }); D.DarkPil = V2({ 244,254, 156,166, 92,104 }); D.TopGlass = V2({ 38,126, 318,400 });
-			D.Gaps = V2({ 162,1, 249,1, 400,0 });
+			D.Win = V2({ 128,160, 168,250, 260,345 }); D.DarkPil = V2({ 250,260, 160,168 }); D.TopGlass = V2({ 40,150, 310,368 });
+			D.Gaps = V2({ 164,1, 255,1, 372,0 });
 			D.RoofMat = SCarbon; D.FrameMat = SDark; D.Frame = 2.5f;
 			break;
 		case 2: // Fiat Panda 4x4 (2012+): 3,68 m, alto y corto, morro corto, formas "squircle", revestimientos negros
 			D.XOff = 2.5f; D.bSmoothTop = true;
-			D.Top = V2({ 0,128, 4,140, 9,148, 15,153, 24,154, 200,154, 215,153, 225,151, 292,98, 330,94, 352,90, 362,85, 366,80, 368,74 });
-			D.Sh = V2({ 0,103, 60,102, 200,99, 292,97, 368,97 });
+			D.Top = V2({ 0,128, 4,140, 9,148, 15,153, 24,154, 205,154, 222,153, 235,151, 312,98, 335,95, 352,91, 362,86, 366,81, 368,75 });
+			D.Sh = V2({ 0,103, 60,102, 200,99, 312,97, 368,97 });
 			D.Bot = V2({ 0,38, 12,31, 35,27, 340,27, 358,32, 368,40 });
 			D.Half = 82.f; D.RcF = 26.f; D.RcR = 16.f;
 			D.RoofIn = 0.84f; D.BeltStep = 2.f; D.Rb = 6.f; D.Rs = 8.f; D.Rr = 10.f; D.CrownH = 3.f; D.CrownR = 4.f; D.Bulge = 1.5f; D.Tuck = 3.f;
-			D.CladZ = 46.f; D.SmoothDeg = 50.f;
+			D.CladZ = 52.f; D.SmoothDeg = 50.f;
 			D.Arch = EArch::Round; D.ArchGap = 5.f; D.FlareMat = SDark; D.FlareOut = 6.f; D.FlareT = 7.f;
-			D.Win = V2({ 76,116, 126,196, 205,288 }); D.DarkPil = V2({ 116,126, 196,205 }); D.TopGlass = V2({ 3,24, 222,294 }); D.Frame = 4.f; D.FrameMat = SDark;
-			D.Gaps = V2({ 121,1, 200.5f,1, 296,0 });
+			D.Win = V2({ 48,116, 126,196, 205,305 }); D.DarkPil = V2({ 116,126, 196,205 }); D.TopGlass = V2({ 3,24, 232,314 }); D.Frame = 4.f; D.FrameMat = SDark;
+			D.Gaps = V2({ 121,1, 200.5f,1, 312,0 });
 			break;
 		case 5: // Pick-up doble cabina: caja de carga abierta, capó alto y largo
 			D.XOff = -15.f;
@@ -106,16 +109,17 @@ namespace
 			D.Arch = EArch::Round; D.ArchGap = 7.f; D.FlareMat = SDark; D.FlareOut = 6.f; D.FlareT = 3.f;
 			break;
 		default: // 3 Land Rover Defender 110 clásico: paneles planos, parabrisas vertical, techo blanco, pasos cuadrados
+			// cotas medidas sobre foto lateral (Defender 110 Station Wagon): techo 189, cintura 124, bajos a 58-64, parabrisas con 18 cm de caída
 			D.XOff = -17.5f;
-			D.Top = V2({ 0,192, 1,197, 4,199.5f, 8,200, 300,200, 304,198, 306,190, 308,186, 314,131, 318,127.5f, 430,126, 436,125, 440,121 });
-			D.Sh = V2({ 0,131, 440,131 });
-			D.Bot = V2({ 0,52, 6,46, 30,44, 410,44, 430,46, 440,52 });
+			D.Top = V2({ 0,182, 1,187, 4,189, 8,189.5f, 271,189.5f, 274,188, 276,184, 277,176, 295,127.5f, 300,126, 330,125, 395,122, 410,120, 416,118, 420,114 });
+			D.Sh = V2({ 0,124, 420,124 });
+			D.Bot = V2({ 0,62, 6,58, 30,58, 400,58, 414,60, 420,64 });
 			D.Half = 89.5f; D.RcF = 4.f; D.RcR = 4.f;
 			D.RoofIn = 0.92f; D.BeltStep = 3.5f; D.Rb = 2.f; D.Rs = 2.5f; D.Rr = 6.f; D.CrownH = 0.5f; D.CrownR = 3.f; D.Bulge = 0.f; D.Tuck = 0.f;
 			D.SmoothDeg = 18.f;
-			D.Arch = EArch::RRect; D.ArchGap = 6.f; D.ArchW = 1.0f; D.ArchH = 0.95f; D.ArchRc = 0.32f; D.FlareMat = SDark; D.FlareOut = 6.f; D.FlareT = 7.f;
-			D.Win = V2({ 74,124, 130,178, 190,246, 256,306 }); D.TopGlass = V2({ 305,316 }); D.Frame = 6.f;
-			D.Gaps = V2({ 184,1, 251,1, 312,0 });
+			D.Arch = EArch::RRect; D.ArchGap = 6.f; D.ArchW = 1.0f; D.ArchH = 1.05f; D.ArchRc = 0.32f; D.FlareMat = SDark; D.FlareOut = 6.f; D.FlareT = 9.f;
+			D.Win = V2({ 15,115, 133,196, 214,280 }); D.TopGlass = V2({ 277,295 }); D.Frame = 17.f; D.FrameBot = 4.f;
+			D.Gaps = V2({ 126.5f,1, 206,1, 295,0 });
 			D.BeltMat = SDark; D.RoofMat = SRoof;
 			break;
 		}
@@ -225,7 +229,7 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		const float yi = FMath::Clamp(FMath::Min(w - 14.f, wyAbs - Wd * 0.5f - 2.f), 6.f, FMath::Max(6.f, yLo - D.Rb - 1.f));
 		FVector2D h[NH];
 		h[0] = FVector2D(0, zb); h[1] = FVector2D(yi, zb); h[2] = FVector2D(yi, zw); h[3] = FVector2D(yLo - D.Rb, zw); h[4] = FVector2D(yLo, zLo);
-		const float z5 = 0.5f * (zLo + zc), z7 = 0.5f * (zc + zHi);
+		const float z5 = D.CladZ > 0.f ? FMath::Clamp(Z(D.CladZ), zLo + 0.4f, zc - 0.4f) : 0.5f * (zLo + zc), z7 = 0.5f * (zc + zHi);
 		h[5] = FVector2D(SideW(xr, z5), z5); h[6] = FVector2D(SideW(xr, zc), zc); h[7] = FVector2D(SideW(xr, z7), z7); h[8] = FVector2D(yHi, zHi);
 		h[9] = FVector2D(yHi - D.Rs + D.Rs * c45, zHi + D.Rs * c45); h[10] = FVector2D(yHi - D.Rs, zS);
 		const float yH = yHi - D.Rs;
@@ -234,7 +238,7 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		const float ins = bWin ? 1.3f : 0.f;
 		const float cb = FMath::Max(yH - D.BeltStep, 4.f), zr = FMath::Max(zt, zS + 4.f);
 		const float ct = FMath::Min(cb, FMath::Max(D.RoofIn * w, D.Rr + 2.f));
-		const float zre = FMath::Max(zr - D.Rr, zS + 1.6f), zg0 = zS + 0.6f, zg1 = FMath::Max(zre - (bWin ? D.Frame : 0.6f), zg0 + 0.2f);
+		const float zre = FMath::Max(zr - D.Rr, zS + 1.6f), zg0 = zS + (bWin ? D.FrameBot : 0.6f), zg1 = FMath::Max(zre - (bWin ? D.Frame : 0.6f), zg0 + 0.2f);
 		auto GL = [&](float z) { return FMath::Lerp(cb, ct, FMath::Clamp((z - zS) / FMath::Max(0.5f, zre - zS), 0.f, 1.f)); };
 		const FVector2D cab[8] = { FVector2D(cb, zS), FVector2D(GL(zg0) - ins, zg0), FVector2D(GL(zg1) - ins, zg1), FVector2D(ct, zre),
 			FVector2D(ct - D.Rr + D.Rr * c45, zre + D.Rr * c45), FVector2D(ct - D.Rr, zre + D.Rr), FVector2D((ct - D.Rr) * 0.5f, zre + D.Rr + 0.75f * D.CrownR), FVector2D(0, zre + D.Rr + D.CrownR) };
@@ -260,10 +264,11 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		if (sg <= 9)
 		{
 			if (bGap) return SDark;
-			if (D.CladZ > 0.f && sg <= 7)
+			if ((D.CladZ > 0.f || D.bNoseDark) && sg <= 7)
 			{
 				const float zq = FMath::Max(FMath::Max(P[i][j].Z, P[i][j2].Z), FMath::Max(P[i + 1][j].Z, P[i + 1][j2].Z));
-				if (zq < Z(D.CladZ) + 0.5f) return SDark;
+				if (D.CladZ > 0.f && zq < Z(D.CladZ) + 0.5f) return SDark;
+				if (D.bNoseDark && sg <= 5 && XB(xm) > xWF + Ra * D.ArchW + 2.f) return SDark;
 			}
 			return SPaint;
 		}
@@ -272,7 +277,7 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		{
 			if (!bCab) return SPaint;
 			if (bGap && bFull) return SDark;
-			if (InR(D.Win, xm)) return sg == 12 ? SGlass : (sg == 13 ? D.FrameMat : SDark);
+			if (InR(D.Win, xm)) return sg == 12 ? SGlass : (sg == 13 || (sg == 11 && D.FrameBot > 2.f) ? D.FrameMat : SDark);
 			if (InR(D.DarkPil, xm)) return SDark;
 			return SPaint;
 		}
@@ -459,9 +464,9 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		SB(SMetal, FVector(xf - 8.f, 0, Z(41.f)), FVector(14.f, 44.f, 2.f), 0.3f, 6);
 		// parrilla: marco, tres lamas y estrella
 		const float xg = xf + 0.5f;
-		Box(SDark, FVector(xg, 0, Z(96.f)), FVector(0.8f, 36.f, 21.f));
-		Box(SChrome, FVector(xg + 0.6f, 0, Z(117.4f)), FVector(0.6f, 36.6f, 0.7f)); Box(SChrome, FVector(xg + 0.6f, 0, Z(74.6f)), FVector(0.6f, 36.6f, 0.7f));
-		for (int32 s = -1; s <= 1; s += 2) Box(SChrome, FVector(xg + 0.6f, s * 36.2f, Z(96.f)), FVector(0.6f, 0.7f, 21.4f));
+		Box(SDark, FVector(xg, 0, Z(96.f)), FVector(0.8f, 36.f, 20.f));
+		Box(SChrome, FVector(xg + 0.6f, 0, Z(116.4f)), FVector(0.6f, 36.6f, 0.7f)); Box(SChrome, FVector(xg + 0.6f, 0, Z(75.6f)), FVector(0.6f, 36.6f, 0.7f));
+		for (int32 s = -1; s <= 1; s += 2) Box(SChrome, FVector(xg + 0.6f, s * 36.2f, Z(96.f)), FVector(0.6f, 0.7f, 20.4f));
 		for (float zz : { 84.f, 96.f, 108.f }) SB(SPaint, FVector(xg + 1.6f, 0, Z(zz)), FVector(1.4f, 35.f, 1.7f), 0.3f, 6);
 		B.Torus(SChrome, FVector(xg + 3.2f, 0, Z(96.f)), FVector(1, 0, 0), 8.6f, 0.9f, 28, 6);
 		B.Cylinder(SDark, FVector(xg + 2.4f, 0, Z(96.f)), FVector(1, 0, 0), 8.f, 0.8f, 24, true);
@@ -473,45 +478,45 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		// faros redondos en el frontal de las aletas con aro LED
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			const FVector c(xf, s * 70.f, Z(101.f));
+			const FVector c(xf, s * 70.f, Z(104.f));
 			B.Cylinder(SPaint, c + FVector(-2.f, 0, 0), FVector(1, 0, 0), 15.f, 4.2f, 28, true);
 			B.Cylinder(SDark, c + FVector(2.1f, 0, 0), FVector(1, 0, 0), 13.2f, 0.6f, 28, true);
 			B.Cylinder(SChrome, c + FVector(2.6f, 0, 0), FVector(1, 0, 0), 12.2f, 0.4f, 28, true);
 			B.Torus(SLight, c + FVector(3.2f, 0, 0), FVector(1, 0, 0), 10.6f, 0.8f, 28, 6);
 			for (int32 q = -1; q <= 1; q += 2) { B.Cylinder(SDark, c + FVector(3.0f, q * 4.f, 0), FVector(1, 0, 0), 3.2f, 0.6f, 16, true); B.Sphere(SChrome, c + FVector(3.4f, q * 4.f, 0), 2.3f, 10); }
 			// intermitentes sobre las aletas (seña de identidad)
-			const float xi = XB(452.f), yi = s * 80.f, zi = HoodZ(452.f, 80.f);
+			const float xi = XB(402.f), yi = s * 80.f, zi = HoodZ(402.f, 80.f);
 			SB(SDark, FVector(xi, yi, zi + 1.6f), FVector(5.f, 4.2f, 1.8f), 0.35f, 6);
 			SB(SAmber, FVector(xi + 0.5f, yi, zi + 2.4f), FVector(4.f, 3.4f, 1.4f), 0.35f, 6);
 			// juntas capó-aletas
-			Box(SDark, FVector(XB(403.f), s * 77.f, HoodZ(403.f, 77.f) + 0.05f), FVector(60.f, 0.35f, 0.2f));
+			Box(SDark, FVector(XB(351.f), s * 77.f, HoodZ(351.f, 77.f) + 0.05f), FVector(60.f, 0.35f, 0.2f));
 			// bisagras de puerta a la vista
-			for (float xh : { 337.f, 245.f }) for (float zh : { 72.f, 112.f })
+			for (float xh : { 284.f, 182.f }) for (float zh : { 70.f, 112.f })
 				SB(SDark, FVector(XB(xh), s * (SY(xh, zh) + 1.0f), Z(zh)), FVector(2.4f, 1.3f, 4.f), 0.35f, 6);
 			// estribo
-			const float xa = XB(101.f) + Ra + 6.f, xb2 = XB(390.f) - Ra - 6.f;
-			SB(SMetal, FVector(0.5f * (xa + xb2), s * (SY(250.f, 40.f) + 8.f), Z(38.f)), FVector(0.5f * (xb2 - xa), 9.f, 1.6f), 0.3f, 6);
-			for (int32 q = 0; q < 3; ++q) SB(SDark, FVector(xa + (xb2 - xa) * (0.15f + 0.35f * q), s * (SY(250.f, 40.f) + 2.f), Z(39.f)), FVector(2.f, 6.f, 2.f), 0.4f, 6);
+			const float xa = XB(64.f) + Ra + 6.f, xb2 = XB(353.f) - Ra - 6.f;
+			SB(SMetal, FVector(0.5f * (xa + xb2), s * (SY(200.f, 52.f) + 8.f), Z(45.f)), FVector(0.5f * (xb2 - xa), 9.f, 1.6f), 0.3f, 6);
+			for (int32 q = 0; q < 3; ++q) SB(SDark, FVector(xa + (xb2 - xa) * (0.15f + 0.35f * q), s * (SY(200.f, 52.f) + 2.f), Z(47.f)), FVector(2.f, 6.f, 2.f), 0.4f, 6);
 			// canalones del techo
-			B.Tube(SDark, { FVector(XB(6.f), s * (0.95f * D.Half + 0.4f), Z(194.f)), FVector(XB(311.f), s * (0.95f * D.Half + 0.4f), Z(194.f)) }, 0.7f, 6);
+			B.Tube(SDark, { FVector(XB(6.f), s * (0.95f * D.Half + 0.4f), Z(194.f)), FVector(XB(250.f), s * (0.95f * D.Half + 0.4f), Z(194.f)) }, 0.8f, 6);
 		}
-		Wipers(342.f, 130.f, 32.f);
-		Mirror(322.f, 141.f, SPaint, 5.f, 9.f, 7.f);
-		Handle(SChrome, 257.f, 117.f, 6.f); Handle(SChrome, 172.f, 117.f, 6.f);
+		Wipers(289.f, 133.f, 32.f);
+		Mirror(276.f, 141.f, SPaint, 5.f, 9.f, 7.f);
+		Handle(SChrome, 200.f, 101.f, 6.f); Handle(SChrome, 112.f, 101.f, 6.f);
 		// trasera: paragolpes, pilotos verticales, luneta en el portón, bisagras, rueda de repuesto
 		SB(SDark, FVector(xk - 1.5f, 0, Z(54.f)), FVector(7.f, D.Half + 2.f, 11.f), 0.22f, 8);
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			float xo; const FRotator r = OnEnd(false, s * 86.f, 106.f, 0.6f, xo);
-			At(FVector(xo, s * 86.f, Z(106.f)), r); SB(SDark, FVector(0), FVector(1.4f, 7.f, 19.f), 0.25f, 6); SB(STail, FVector(-0.8f, 0, 3.f), FVector(1.f, 5.6f, 13.f), 0.3f, 6); SB(SAmber, FVector(-0.8f, 0, -13.f), FVector(1.f, 5.6f, 3.f), 0.3f, 6); Reset();
+			float xo; const FRotator r = OnEnd(false, s * 86.f, 90.f, 0.6f, xo);
+			At(FVector(xo, s * 86.f, Z(90.f)), r); SB(SDark, FVector(0), FVector(1.4f, 7.f, 19.f), 0.25f, 6); SB(STail, FVector(-0.8f, 0, 3.f), FVector(1.f, 5.6f, 13.f), 0.3f, 6); SB(SAmber, FVector(-0.8f, 0, -13.f), FVector(1.f, 5.6f, 3.f), 0.3f, 6); Reset();
 		}
 		Box(SDark, FVector(xk - 0.3f, 0, Z(162.f)), FVector(0.4f, 65.f, 24.f));
 		Box(SGlass, FVector(xk - 0.7f, 0, Z(162.f)), FVector(0.4f, 62.f, 21.f));
-		for (float zh : { 92.f, 150.f }) SB(SDark, FVector(xk - 1.f, -80.f, Z(zh)), FVector(1.5f, 3.f, 5.f), 0.35f, 6);
+		for (float zh : { 96.f, 154.f }) SB(SDark, FVector(xk - 1.f, -80.f, Z(zh)), FVector(1.5f, 3.f, 5.f), 0.35f, 6);
 		SB(SChrome, FVector(xk - 1.f, 74.f, Z(118.f)), FVector(1.2f, 2.f, 6.f), 0.35f, 6);
 		Plate(false, 76.f);
-		Spare(xk - 14.f, 0.f, 116.f, 40.f);
-		B.Cylinder(SChrome, FVector(xk - 27.f, 0, Z(116.f)), FVector(-1, 0, 0), 9.f, 1.f, 24, true);
+		Spare(xk - 14.f, 0.f, 126.f, 38.f);
+		B.Cylinder(SChrome, FVector(xk - 27.f, 0, Z(126.f)), FVector(-1, 0, 0), 9.f, 1.f, 24, true);
 		break;
 	}
 	case 1: // ============================ Urus
@@ -526,56 +531,68 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 			}
 		};
 		// frontal: mitad inferior negra (calandra hexagonal y tomas con marco en "Y" del color de la carrocería), faros finos arriba
-		Skin(true, 52.f, 22.f, D.Half - 12.f, SDark, 0.6f, 1.2f);
+		Skin(true, 55.f, 25.f, D.Half - D.RcF + 2.f, SDark, 0.15f, 0.6f);
 		const float xg = FrontX(0.f, 52.f);
-		for (int32 r = 0; r < 7; ++r) for (int32 c = -9; c <= 9; ++c)
+		// tira que recorre el frontal siguiendo su curva: polilínea (y, z) de serie
+		auto FrontStrip = [&](const TArray<FVector2D>& Pl, int32 Mat, float hz, float out, float th)
 		{
-			const float yy = c * 5.4f + ((r & 1) ? 2.7f : 0.f); if (FMath::Abs(yy) > 44.f - r * 0.8f) continue;
-			B.Prism(SCarbon, FVector(xg + 1.2f, yy, Z(37.f) + r * 5.f), FVector(1, 0, 0), 2.6f, 1.4f, 6, 0.f);
+			for (int32 k = 0; k + 1 < Pl.Num(); ++k)
+			{
+				const FVector2D A = Pl[k], Bp = Pl[k + 1]; const float len = (Bp - A).Size(); const int32 n = FMath::Max(1, FMath::CeilToInt(len / 2.5f));
+				const float roll = FMath::RadiansToDegrees(FMath::Atan2(Bp.Y - A.Y, Bp.X - A.X));
+				for (int32 q = 0; q < n; ++q)
+				{
+					const FVector2D P0 = FMath::Lerp(A, Bp, (q + 0.5f) / n); float xo; const FRotator r = OnEnd(true, P0.X, P0.Y, out, xo, 1.5f);
+					At(FVector(xo, P0.X, Z(P0.Y)), r); B.Xf = FTransform(FRotator(0.f, 0.f, -roll)) * B.Xf; Box(Mat, FVector(0), FVector(th, 0.5f * len / n + 0.15f, hz)); Reset();
+				}
+			}
+		};
+		// calandra hexagonal en la franja alta, lámina en "V" del color de la carrocería, tomas con 3 lamas, aletas del splitter
+		for (int32 r = 0; r < 3; ++r) for (int32 c = -12; c <= 12; ++c)
+		{
+			const float yy = c * 5.2f + ((r & 1) ? 2.6f : 0.f); if (FMath::Abs(yy) > 60.f) continue;
+			B.Prism(SCarbon, FVector(FrontX(yy, 66.f) + 0.6f, yy, Z(62.5f) + r * 4.6f), FVector(1, 0, 0), 2.5f, 1.2f, 6, 0.f);
 		}
-		SB(SPaint, FVector(xg + 1.6f, 0, Z(72.f)), FVector(1.4f, 48.f, 1.6f), 0.3f, 6);              // labio superior del color de la carrocería
+		FrontStrip({ FVector2D(-95.f, 74.f), FVector2D(-72.f, 59.f), FVector2D(72.f, 59.f), FVector2D(95.f, 74.f) }, SPaint, 1.7f, 1.0f, 1.2f);
+		for (int32 s = -1; s <= 1; s += 2) for (float zz : { 41.f, 47.5f, 54.f })
+			FrontStrip({ FVector2D(s * 70.f, zz - 1.f), FVector2D(s * 92.f, zz + 3.f) }, SPaint, 0.9f, 0.9f, 1.f);
+		for (int32 q = -3; q <= 3; ++q) if (q) { const float yy = q * 12.f; SB(SPaint, FVector(FrontX(yy, 33.f) + 1.5f, yy, Z(33.f)), FVector(3.f, 0.9f, 3.5f), 0.4f, 6); }
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			// toma lateral: marco en "Y" del color de la carrocería sobre fondo negro
-			float xo; FRotator r = OnEnd(true, s * 74.f, 52.f, 1.8f, xo, 8.f);
-			At(FVector(xo, s * 74.f, Z(43.f)), r); SB(SPaint, FVector(0), FVector(1.4f, 2.2f, 10.f), 0.3f, 6);
-			At(FVector(xo, s * 69.5f, Z(59.5f)), r + FRotator(0.f, 0.f, 38.f * s)); SB(SPaint, FVector(0), FVector(1.4f, 2.2f, 8.f), 0.3f, 6);
-			At(FVector(xo, s * 78.5f, Z(59.5f)), r + FRotator(0.f, 0.f, -38.f * s)); SB(SPaint, FVector(0), FVector(1.4f, 2.2f, 8.f), 0.3f, 6);
-			Reset();
+			float xo; FRotator r;
 			// faro: carcasa fina inclinada con firma LED en "Y"
-			r = OnEnd(true, s * 70.f, 89.f, 0.3f, xo, 14.f);
-			At(FVector(xo, s * 70.f, Z(89.f)), r + FRotator(0.f, 0.f, s * -6.f));
+			r = OnEnd(true, s * 70.f, 91.f, 0.3f, xo, 14.f);
+			At(FVector(xo, s * 70.f, Z(91.f)), r + FRotator(0.f, 0.f, s * -6.f));
 			SB(SDark, FVector(0), FVector(2.0f, 21.f, 3.4f), 0.35f, 8);
 			SB(SLight, FVector(0.9f, s * -2.f, 1.1f), FVector(1.3f, 17.f, 0.8f), 0.45f, 6);
-			At(FVector(xo + 0.6f, s * 82.f, Z(88.f)), r + FRotator(0.f, 0.f, s * -40.f)); SB(SLight, FVector(0), FVector(1.2f, 5.5f, 0.6f), 0.45f, 6);
+			At(FVector(xo + 0.6f, s * 82.f, Z(90.f)), r + FRotator(0.f, 0.f, s * -40.f)); SB(SLight, FVector(0), FVector(1.2f, 5.5f, 0.6f), 0.45f, 6);
 			Reset();
 		}
 		SB(SCarbon, FVector(FrontX(0.f, 32.f) + 2.5f, 0, Z(30.5f)), FVector(7.f, 84.f, 1.8f), 0.3f, 8);
-		for (int32 s = -1; s <= 1; s += 2) SB(SPaint, FVector(XB(452.f), s * 30.f, HoodZ(452.f, 30.f) + 0.4f), FVector(46.f, 1.2f, 0.7f), 0.4f, 6);   // nervios del capó
-		Wipers(397.f, 107.f, 36.f);
-		Mirror(392.f, 112.f, SCarbon, 5.5f, 9.5f, 6.f);
-		Handle(SDark, 236.f, 104.f, 7.f); Handle(SDark, 158.f, 107.f, 7.f);
+		for (int32 s = -1; s <= 1; s += 2) SB(SPaint, FVector(XB(440.f), s * 30.f, HoodZ(440.f, 30.f) + 0.4f), FVector(55.f, 1.2f, 0.7f), 0.4f, 6);   // nervios del capó
+		Wipers(367.f, 120.f, 36.f);
+		Mirror(352.f, 124.f, SCarbon, 5.5f, 9.5f, 6.f);
+		Handle(SDark, 242.f, 113.f, 7.f); Handle(SDark, 166.f, 118.f, 7.f);
 		// trasera: banda negra con la luz roja de lado a lado y pilotos en "Y", alerones, difusor negro con doble salida a cada lado
-		Skin(false, 112.f, 5.5f, D.Half - 11.f, SCarbon, 0.5f, 0.9f);
-		Box(STail, FVector(RearX(0.f, 112.f) - 1.2f, 0, Z(112.f)), FVector(0.5f, 60.f, 0.6f));
+		Skin(false, 119.f, 5.5f, D.Half - 11.f, SCarbon, 0.5f, 0.9f);
+		Box(STail, FVector(RearX(0.f, 119.f) - 1.2f, 0, Z(119.f)), FVector(0.5f, 60.f, 0.6f));
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			float xo; FRotator r = OnEnd(false, s * 80.f, 112.f, 1.2f, xo, 10.f);
-			At(FVector(xo, s * 80.f, Z(112.f)), r); SB(STail, FVector(0, s * -8.f, 0.f), FVector(0.6f, 12.f, 0.9f), 0.4f, 6);
-			At(FVector(xo, s * 88.f, Z(114.5f)), r + FRotator(0.f, 0.f, s * 30.f)); SB(STail, FVector(0), FVector(0.6f, 6.f, 0.9f), 0.4f, 6);
-			At(FVector(xo, s * 88.f, Z(109.5f)), r + FRotator(0.f, 0.f, s * -30.f)); SB(STail, FVector(0), FVector(0.6f, 6.f, 0.9f), 0.4f, 6);
+			float xo; FRotator r = OnEnd(false, s * 80.f, 119.f, 1.2f, xo, 10.f);
+			At(FVector(xo, s * 80.f, Z(119.f)), r); SB(STail, FVector(0, s * -8.f, 0.f), FVector(0.6f, 12.f, 0.9f), 0.4f, 6);
+			At(FVector(xo, s * 88.f, Z(121.5f)), r + FRotator(0.f, 0.f, s * 30.f)); SB(STail, FVector(0), FVector(0.6f, 6.f, 0.9f), 0.4f, 6);
+			At(FVector(xo, s * 88.f, Z(116.5f)), r + FRotator(0.f, 0.f, s * -30.f)); SB(STail, FVector(0), FVector(0.6f, 6.f, 0.9f), 0.4f, 6);
 			Reset();
 		}
-		SB(SCarbon, FVector(XB(30.f), 0, Z(130.f)), FVector(7.f, 62.f, 1.2f), 0.35f, 8);               // labio del portón
-		SB(SCarbon, FVector(XB(122.f), 0, Z(156.5f)), FVector(6.f, 52.f, 1.f), 0.35f, 8);               // alerón de techo
-		Skin(false, 46.f, 16.f, D.Half - 11.f, SDark, 0.6f, 1.2f);
+		SB(SCarbon, FVector(XB(26.f), 0, Z(139.5f)), FVector(8.f, 60.f, 1.3f), 0.35f, 8);               // labio del portón
+		Skin(false, 46.f, 16.f, D.Half - D.RcR + 2.f, SDark, 0.15f, 0.6f);
 		for (int32 q = -3; q <= 3; ++q) Box(SCarbon, FVector(xk + 2.f, q * 9.f, Z(34.f)), FVector(6.f, 0.6f, 4.5f));
 		for (int32 s = -1; s <= 1; s += 2) for (float yy : { 36.f, 47.f })
 		{
 			B.Cylinder(SChrome, FVector(xk + 4.f, s * yy, Z(41.f)), FVector(-1, 0, 0), 4.8f, 8.f, 18, true);
 			B.Cylinder(SDark, FVector(xk + 4.f, s * yy, Z(41.f)), FVector(-1, 0, 0), 3.8f, 8.3f, 18, true);
 		}
-		Plate(false, 74.f);
+		Plate(false, 80.f);
 		break;
 	}
 	case 2: // ============================ Panda 4x4
@@ -600,8 +617,8 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		SB(SCarbon, FVector(FrontX(0.f, 52.f) + 4.6f, 0, Z(54.f)), FVector(0.8f, 36.f, 7.f), 0.3f, 8);
 		for (int32 q = -1; q <= 1; q += 2) Box(SMetal, FVector(FrontX(0.f, 52.f) + 5.4f, 0, Z(54.f) + q * 2.8f), FVector(0.3f, 34.f, 0.4f));
 		SB(SAlu, FVector(FrontX(0.f, 40.f) - 1.f, 0, Z(37.5f)), FVector(6.f, 44.f, 3.2f), 0.35f, 8);
-		Wipers(291.f, 99.f, 30.f);
-		Mirror(300.f, 105.f, SPaint, 4.5f, 8.f, 6.f);
+		Wipers(311.f, 99.f, 30.f);
+		Mirror(306.f, 106.f, SPaint, 4.5f, 8.f, 6.f);
 		Handle(SPaint, 190.f, 94.f, 5.5f); Handle(SPaint, 118.f, 96.f, 5.5f);
 		// barras de techo
 		for (int32 s = -1; s <= 1; s += 2)
@@ -729,69 +746,76 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 	default: // ============================ Defender 110
 	{
 		// frontal: panel negro con calandra de malla, faros redondos en marcos cuadrados, pilotos bajo los faros
-		Box(SDark, FVector(xf + 0.4f, 0, Z(100.f)), FVector(0.7f, 84.f, 19.f));
-		for (int32 r = 0; r < 6; ++r) for (int32 c = -6; c <= 6; ++c) Box(SMetal, FVector(xf + 1.2f, c * 5.2f, Z(84.f) + r * 6.2f), FVector(0.3f, 2.f, 2.2f));
+		Box(SDark, FVector(xf + 0.4f, 0, Z(96.f)), FVector(0.7f, 84.f, 16.f));
+		for (int32 r = 0; r < 5; ++r) for (int32 c = -6; c <= 6; ++c) Box(SMetal, FVector(xf + 1.2f, c * 5.2f, Z(84.f) + r * 6.2f), FVector(0.3f, 2.f, 2.2f));
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			const FVector c(xf + 1.f, s * 63.f, Z(104.f));
+			const FVector c(xf + 1.f, s * 63.f, Z(100.f));
 			SB(SDark, c, FVector(1.2f, 13.f, 13.f), 0.18f, 6);
 			B.Torus(SChrome, c + FVector(1.2f, 0, 0), FVector(1, 0, 0), 9.2f, 1.f, 28, 6);
 			B.Cylinder(SChrome, c + FVector(0.6f, 0, 0), FVector(1, 0, 0), 9.f, 0.6f, 28, true);
 			B.Lathe(SLight, c + FVector(1.f, 0, 0), FVector(1, 0, 0), { FVector2D(0.f, 8.6f), FVector2D(1.2f, 7.f), FVector2D(1.8f, 4.f), FVector2D(2.0f, 0.f) }, 24);
-			SB(SAmber, FVector(xf + 1.2f, s * 72.f, Z(86.f)), FVector(0.8f, 5.f, 2.6f), 0.3f, 6);
-			SB(SLight, FVector(xf + 1.2f, s * 57.f, Z(86.f)), FVector(0.8f, 5.f, 2.6f), 0.3f, 6);
+			SB(SAmber, FVector(xf + 1.2f, s * 72.f, Z(84.f)), FVector(0.8f, 5.f, 2.6f), 0.3f, 6);
+			SB(SLight, FVector(xf + 1.2f, s * 57.f, Z(84.f)), FVector(0.8f, 5.f, 2.6f), 0.3f, 6);
 			// chapa estriada sobre las aletas
-			const float zp = HoodZ(390.f, 74.f) + 0.3f;
-			Box(SAlu, FVector(XB(388.f), s * 74.f, zp), FVector(44.f, 13.f, 0.3f));
-			for (int32 a = 0; a < 14; ++a) for (int32 b = 0; b < 4; ++b) { At(FVector(XB(348.f) + a * 6.f + (b & 1) * 3.f, s * (64.f + b * 6.f), zp + 0.4f), FRotator(0.f, 45.f, 0.f)); Box(SAlu, FVector(0), FVector(1.6f, 0.4f, 0.25f)); Reset(); }
+			const float zp = HoodZ(370.f, 74.f) + 0.3f;
+			Box(SAlu, FVector(XB(368.f), s * 74.f, zp), FVector(42.f, 13.f, 0.3f));
+			for (int32 a = 0; a < 14; ++a) for (int32 b = 0; b < 4; ++b) { At(FVector(XB(330.f) + a * 6.f + (b & 1) * 3.f, s * (64.f + b * 6.f), zp + 0.4f), FRotator(0.f, 45.f, 0.f)); Box(SAlu, FVector(0), FVector(1.6f, 0.4f, 0.25f)); Reset(); }
 			// junta del capó (más estrecho que las aletas)
-			Box(SDark, FVector(XB(377.f), s * 58.f, HoodZ(377.f, 58.f) + 0.05f), FVector(58.f, 0.35f, 0.2f));
+			Box(SDark, FVector(XB(358.f), s * 58.f, HoodZ(358.f, 58.f) + 0.05f), FVector(57.f, 0.35f, 0.2f));
 			// bisagras grandes a la vista y manillas de pulsador
-			for (float xh : { 309.f, 252.f, 186.f }) for (float zh : { 74.f, 114.f })
+			for (float xh : { 292.f, 203.f }) for (float zh : { 76.f, 110.f })
 				SB(SDark, FVector(XB(xh), s * (SY(xh, zh) + 1.2f), Z(zh)), FVector(2.6f, 1.5f, 4.5f), 0.3f, 6);
 			// canalones del techo
-			B.Tube(SDark, { FVector(XB(5.f), s * (0.92f * D.Half + 0.3f), Z(195.f)), FVector(XB(304.f), s * (0.92f * D.Half + 0.3f), Z(195.f)) }, 0.8f, 6);
+			B.Tube(SDark, { FVector(XB(5.f), s * (0.92f * D.Half + 0.3f), Z(184.f)), FVector(XB(272.f), s * (0.92f * D.Half + 0.3f), Z(184.f)) }, 0.8f, 6);
 			// ventanas alpinas en el techo
-			for (float xa : { 120.f, 175.f })
+			for (float xa : { 108.f, 160.f })
 			{
-				At(FVector(XB(xa), s * (0.92f * D.Half - 3.4f), Z(197.4f)), FRotator(0.f, 0.f, s * 45.f));
+				At(FVector(XB(xa), s * (0.92f * D.Half - 3.4f), Z(186.9f)), FRotator(0.f, 0.f, s * 45.f));
 				SB(SDark, FVector(0), FVector(21.f, 3.8f, 0.5f), 0.3f, 6); SB(SGlass, FVector(0, 0, 0.3f), FVector(19.5f, 3.f, 0.4f), 0.3f, 6); Reset();
 			}
 		}
-		Handle(SChrome, 262.f, 121.f, 3.f); Handle(SChrome, 196.f, 121.f, 3.f);
+		Handle(SChrome, 224.f, 101.f, 3.f); Handle(SChrome, 144.f, 101.f, 3.f);
 		// rejilla lateral en la aleta derecha
-		Box(SDark, FVector(XB(340.f), SY(340.f, 106.f) + 0.25f, Z(106.f)), FVector(12.f, 0.3f, 7.f));
-		for (int32 q = 0; q < 4; ++q) Box(SMetal, FVector(XB(340.f), SY(340.f, 106.f) + 0.6f, Z(101.f) + q * 3.3f), FVector(11.f, 0.3f, 0.5f));
+		Box(SDark, FVector(XB(318.f), SY(318.f, 104.f) + 0.25f, Z(104.f)), FVector(12.f, 0.3f, 7.f));
+		for (int32 q = 0; q < 4; ++q) Box(SMetal, FVector(XB(318.f), SY(318.f, 104.f) + 0.6f, Z(99.f) + q * 3.3f), FVector(11.f, 0.3f, 0.5f));
 		// parachoques de acero, protector, defensa
-		Box(SDark, FVector(xf + 5.f, 0, Z(55.f)), FVector(5.f, 92.f, 7.f));
-		for (int32 s = -1; s <= 1; s += 2) { Box(SDark, FVector(xf + 2.f, s * 95.f, Z(55.f)), FVector(5.f, 4.f, 6.5f)); B.Cylinder(SMetal, FVector(xf + 10.f, s * 40.f, Z(55.f)), FVector(1, 0, 0), 2.2f, 2.f, 10, true); }
-		SB(SMetal, FVector(xf - 12.f, 0, Z(44.f)), FVector(16.f, 40.f, 1.8f), 0.3f, 6);
-		Wipers(317.f, 129.f, 34.f);
+		Box(SDark, FVector(xf + 5.f, 0, Z(63.f)), FVector(5.f, 92.f, 6.5f));
+		for (int32 s = -1; s <= 1; s += 2) { Box(SDark, FVector(xf + 2.f, s * 95.f, Z(63.f)), FVector(5.f, 4.f, 6.f)); B.Cylinder(SMetal, FVector(xf + 10.f, s * 40.f, Z(63.f)), FVector(1, 0, 0), 2.2f, 2.f, 10, true); }
+		SB(SMetal, FVector(xf - 12.f, 0, Z(52.f)), FVector(16.f, 40.f, 1.8f), 0.3f, 6);
+		Wipers(296.f, 128.f, 34.f);
+		// estribos y largueros del chasis a la vista bajo la carrocería
+		for (int32 s = -1; s <= 1; s += 2)
+		{
+			const float xa = XB(88.f) + Ra + 8.f, xb2 = XB(367.f) - Ra - 8.f;
+			Box(SDark, FVector(0.5f * (xa + xb2), s * 42.f, Z(52.f)), FVector(0.5f * (xb2 - xa) + 30.f, 3.f, 6.f));
+			SB(SDark, FVector(0.5f * (xa + xb2), s * (D.Half - 4.f), Z(48.f)), FVector(0.5f * (xb2 - xa), 7.f, 1.6f), 0.3f, 6);
+		}
 		// retrovisores sobre brazo
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			const float y0 = SY(300.f, 128.f);
-			B.Tube(SDark, { FVector(XB(300.f), s * y0, Z(128.f)), FVector(XB(300.f), s * (y0 + 12.f), Z(136.f)) }, 0.9f, 6);
-			SB(SDark, FVector(XB(301.f), s * (y0 + 15.f), Z(142.f)), FVector(1.6f, 7.f, 9.f), 0.25f, 6);
-			Box(SGlass, FVector(XB(299.3f), s * (y0 + 15.f), Z(142.f)), FVector(0.3f, 6.f, 8.f));
+			const float y0 = SY(286.f, 118.f);
+			B.Tube(SDark, { FVector(XB(286.f), s * y0, Z(120.f)), FVector(XB(286.f), s * (y0 + 12.f), Z(128.f)) }, 0.9f, 6);
+			SB(SDark, FVector(XB(287.f), s * (y0 + 15.f), Z(134.f)), FVector(1.6f, 7.f, 9.f), 0.25f, 6);
+			Box(SGlass, FVector(XB(285.3f), s * (y0 + 15.f), Z(134.f)), FVector(0.3f, 6.f, 8.f));
 		}
 		// snórquel en el pilar A derecho
 		{
-			const float ys = SY(330.f, 110.f) + 5.f;
-			B.Tube(SDark, FDustlineMeshBuilder::Smooth({ FVector(XB(334.f), ys - 4.f, Z(104.f)), FVector(XB(330.f), ys, Z(110.f)), FVector(XB(316.f), ys, Z(140.f)), FVector(XB(306.f), ys - 1.f, Z(196.f)), FVector(XB(304.f), ys - 2.f, Z(206.f)) }, 5), 4.2f, 10);
-			SB(SDark, FVector(XB(306.f), ys - 2.f, Z(209.f)), FVector(6.f, 5.f, 4.f), 0.4f, 8);
+			const float ys = SY(312.f, 108.f) + 5.f;
+			B.Tube(SDark, FDustlineMeshBuilder::Smooth({ FVector(XB(316.f), ys - 4.f, Z(102.f)), FVector(XB(312.f), ys, Z(108.f)), FVector(XB(296.f), ys, Z(132.f)), FVector(XB(280.f), ys - 1.f, Z(186.f)), FVector(XB(278.f), ys - 2.f, Z(196.f)) }, 5), 4.2f, 10);
+			SB(SDark, FVector(XB(280.f), ys - 2.f, Z(199.f)), FVector(6.f, 5.f, 4.f), 0.4f, 8);
 		}
 		// baca expedicionaria con patas
 		for (int32 s = -1; s <= 1; s += 2)
 		{
-			B.Tube(SDark, { FVector(XB(20.f), s * 76.f, Z(208.f)), FVector(XB(298.f), s * 76.f, Z(208.f)) }, 1.4f, 6);
-			for (float xp : { 24.f, 110.f, 200.f, 290.f }) SB(SDark, FVector(XB(xp), s * 78.f, Z(203.f)), FVector(2.f, 2.f, 4.5f), 0.4f, 6);
+			B.Tube(SDark, { FVector(XB(20.f), s * 76.f, Z(198.f)), FVector(XB(266.f), s * 76.f, Z(198.f)) }, 1.4f, 6);
+			for (float xp : { 24.f, 104.f, 184.f, 262.f }) SB(SDark, FVector(XB(xp), s * 78.f, Z(193.f)), FVector(2.f, 2.f, 4.5f), 0.4f, 6);
 		}
-		for (int32 q = 0; q < 8; ++q) B.Tube(SDark, { FVector(XB(28.f + q * 37.f), -76.f, Z(208.f)), FVector(XB(28.f + q * 37.f), 76.f, Z(208.f)) }, 1.0f, 6);
+		for (int32 q = 0; q < 8; ++q) B.Tube(SDark, { FVector(XB(28.f + q * 33.f), -76.f, Z(198.f)), FVector(XB(28.f + q * 33.f), 76.f, Z(198.f)) }, 1.0f, 6);
 		// trasera: puerta con rueda de repuesto, luneta, grupos de luces bajos, travesaño
-		Box(SDark, FVector(xk - 0.3f, -6.f, Z(163.f)), FVector(0.4f, 47.f, 22.f));
-		Box(SGlass, FVector(xk - 0.7f, -6.f, Z(163.f)), FVector(0.4f, 44.f, 19.f));
-		Box(SDark, FVector(xk - 0.25f, 0, Z(120.f)), FVector(0.3f, 72.f, 0.3f));
+		Box(SDark, FVector(xk - 0.3f, -6.f, Z(156.f)), FVector(0.4f, 47.f, 19.f));
+		Box(SGlass, FVector(xk - 0.7f, -6.f, Z(156.f)), FVector(0.4f, 44.f, 16.f));
+		Box(SDark, FVector(xk - 0.25f, 0, Z(124.f)), FVector(0.3f, 72.f, 0.3f));
 		for (int32 s = -1; s <= 1; s += 2)
 		{
 			SB(SDark, FVector(xk - 0.8f, s * 79.f, Z(73.f)), FVector(1.f, 6.f, 15.f), 0.25f, 6);
@@ -799,11 +823,11 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 			SB(SAmber, FVector(xk - 1.4f, s * 79.f, Z(72.f)), FVector(0.8f, 4.6f, 3.5f), 0.4f, 6);
 			SB(SLight, FVector(xk - 1.4f, s * 79.f, Z(63.f)), FVector(0.8f, 4.6f, 3.5f), 0.4f, 6);
 		}
-		for (float zh : { 80.f, 160.f }) SB(SDark, FVector(xk - 1.f, 64.f, Z(zh)), FVector(1.5f, 3.5f, 5.f), 0.3f, 6);
-		SB(SChrome, FVector(xk - 1.f, -58.f, Z(128.f)), FVector(1.2f, 2.f, 4.f), 0.35f, 6);
-		Box(SDark, FVector(xk + 3.f, 0, Z(50.f)), FVector(6.f, 88.f, 5.f));
-		Plate(false, 66.f);
-		Spare(xk - 14.f, -6.f, 120.f, 41.f);
+		for (float zh : { 84.f, 150.f }) SB(SDark, FVector(xk - 1.f, 64.f, Z(zh)), FVector(1.5f, 3.5f, 5.f), 0.3f, 6);
+		SB(SChrome, FVector(xk - 1.f, -58.f, Z(122.f)), FVector(1.2f, 2.f, 4.f), 0.35f, 6);
+		Box(SDark, FVector(xk + 3.f, 0, Z(56.f)), FVector(6.f, 88.f, 5.f));
+		Plate(false, 70.f);
+		Spare(xk - 14.f, -6.f, 110.f, 41.f);
 		break;
 	}
 	}
