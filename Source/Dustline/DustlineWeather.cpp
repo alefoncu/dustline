@@ -50,7 +50,7 @@ void ADustlineWeather::BeginPlay()
 {
 	Super::BeginPlay();
 	UWorld* W = GetWorld();
-	{ TActorIterator<ADirectionalLight> It(W); if (It) Sun = It->GetComponent(); }
+	{ TActorIterator<ADirectionalLight> It(W); if (It) Sun = Cast<UDirectionalLightComponent>(It->GetLightComponent()); }
 	{ TActorIterator<ASkyLight> It(W); if (It) Sky = It->GetLightComponent(); }
 	{ TActorIterator<AExponentialHeightFog> It(W); if (It) Fog = It->GetComponent(); }
 	if (Sun.IsValid()) SunBase = Sun->Intensity;
