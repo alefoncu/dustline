@@ -10,9 +10,21 @@ if unreal.EditorAssetLibrary.does_asset_exist(LEVEL):
 ela.new_level(LEVEL)
 world = ela.get_editor_world()
 land = DTL.create_procedural_landscape(world, 2017, 1337, 200.0, 300.0, 380.0, 350000, True, 0.07)
+land.set_actor_label("Terrain")
+# ríos, lagos y máscara de superficies (física + material)
+if unreal.EditorAssetLibrary.does_directory_exist("/Game/Water/Rivers"):
+    unreal.EditorAssetLibrary.delete_directory("/Game/Water/Rivers")
+unreal.EditorAssetLibrary.make_directory("/Game/Water/Rivers")
+nw = DTL.bake_world_data(world, unreal.EditorAssetLibrary.load_asset("/Game/Water/M_Water"))
+print("BW_BAKE water meshes", nw)
+unreal.EditorAssetLibrary.save_directory("/Game/Water/Rivers")
+unreal.EditorAssetLibrary.save_asset("/Game/Terrain/T_SurfaceMask")
+# material del terreno (lee T_SurfaceMask y WeatherTex)
+DUSTLINE_NO_APPLY = True
+exec(open("/Volumes/SSD/Dustline-UE/Content/Python/make_material.py").read())
 mat = unreal.EditorAssetLibrary.load_asset('/Game/Terrain/M_Terrain')
 land.set_editor_property("landscape_material", mat)
-land.set_actor_label("Terrain")
+land.set_editor_property("use_dynamic_material_instance", True)   # el clima cambia parámetros del material en juego
 loc = DTL.find_spawn_location(world)
 print("BW_SPAWN", loc)
 ela.spawn_actor_from_class(unreal.PlayerStart, loc)
@@ -81,7 +93,7 @@ scatter("tree_stump_01", 220, 42, 80, 160, 300, 24000, 0.3, 0.0004, 0.5, False, 
 plane = unreal.EditorAssetLibrary.load_asset("/Engine/BasicShapes/Plane")
 wm = unreal.EditorAssetLibrary.load_asset("/Game/Water/M_Water")
 w = ela.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(0, 0, 0))
-w.set_actor_label("WaterSurface")
+w.set_actor_label("WaterSurface"); w.tags = ["DustlineWater"]
 smc = w.static_mesh_component
 smc.set_static_mesh(plane); smc.set_material(0, wm)
 w.set_actor_scale3d(unreal.Vector(4200, 4200, 1))

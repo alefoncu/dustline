@@ -29,6 +29,15 @@ public:
 	static UStaticMesh* CreateProceduralConifer(const FString& PackagePath, const FString& AssetName, int32 Seed, float HeightCm, float TrunkRadiusCm,
 		int32 Whorls, int32 CardsPerWhorl, float CrownWidthCm, UMaterialInterface* BarkMaterial, UMaterialInterface* FoliageMaterial);
 
+	/** Hornea los datos del mundo tras crear el terreno: textura T_SurfaceMask (tierra/barro/hierba alta/grava), Content/Data/world.bin
+	 *  (máscara + corrientes y profundidad del agua para la física) y las mallas de agua de ríos y lagos (actores con la etiqueta DustlineWater). */
+	UFUNCTION(BlueprintCallable, Category = "Dustline|Terrain", meta = (WorldContext = "WorldContextObject"))
+	static int32 BakeWorldData(UObject* WorldContextObject, UMaterialInterface* WaterMaterial);
+
+	/** Mata de hierba alta de bajo poligonaje (hojas como tiras curvas, sin transparencias) con 2 LOD. Editor only. */
+	UFUNCTION(BlueprintCallable, Category = "Dustline|Terrain")
+	static UStaticMesh* CreateProceduralGrass(const FString& PackagePath, const FString& AssetName, int32 Seed, float HeightCm, int32 Blades, UMaterialInterface* Material);
+
 	/** Height (cm, world space) at X,Y or -1e9 if outside. */
 	UFUNCTION(BlueprintCallable, Category = "Dustline|Terrain", meta = (WorldContext = "WorldContextObject"))
 	static float GetTerrainHeight(UObject* WorldContextObject, float X, float Y);

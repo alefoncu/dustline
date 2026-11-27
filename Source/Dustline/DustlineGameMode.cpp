@@ -4,6 +4,8 @@
 #include "Engine/World.h"
 #include "Engine/PostProcessVolume.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "DustlineWeather.h"
+#include "DustlineWorld.h"
 
 ADustlineGameMode::ADustlineGameMode()
 {
@@ -17,6 +19,10 @@ void ADustlineGameMode::BeginPlay()
 	// Árboles/rocas: asegura que el árbol de instancias está construido (si no, la colisión existe pero el render tarda en aparecer)
 	for (TObjectIterator<UHierarchicalInstancedStaticMeshComponent> It; It; ++It)
 		if (It->GetWorld() == W) It->BuildTreeIfOutdated(true, true);
+	int32 NW = 0; for (TActorIterator<AActor> It(W); It; ++It) if (It->ActorHasTag(TEXT("DustlineWater"))) ++NW;
+	UE_LOG(LogTemp, Display, TEXT("DUSTLINE water actors=%d data=%d"), NW, DustlineWorld::LoadData() ? 1 : 0);
+	W->SpawnActor<ADustlineWeather>();
+	W->SpawnActor<ADustlineGrass>();
 	// Corrección de color / acabado de imagen suave (sin tocar la exposición automática)
 	APostProcessVolume* V = W->SpawnActor<APostProcessVolume>();
 	if (V)

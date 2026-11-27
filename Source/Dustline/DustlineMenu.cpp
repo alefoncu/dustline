@@ -187,9 +187,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildPause()
 	V->AddSlot().AutoHeight().Padding(0, 12, 0, 0)[ Button(TEXT("Taller"), [Weak]() { if (auto M = Weak.Pin()) M->OpenGarageFrom(EScreen::Pause); }, EBtn::Secondary, 0.f, 23.f) ];
 	V->AddSlot().AutoHeight().Padding(0, 12, 0, 0)[ Button(TEXT("Ajustes"), [Weak]() { if (auto M = Weak.Pin()) M->ShowSettings(); }, EBtn::Secondary, 0.f, 23.f) ];
 	V->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 24, 0, 0)
-	[ Segmented({ TEXT("Despejado"), TEXT("Lluvia"), TEXT("Nieve") },
-		[]() { return ADustlineCar::GSnow > 0.5f ? 2 : (ADustlineCar::GWet > 0.5f ? 1 : 0); },
-		[](int32 I) { ADustlineCar::GWet = I == 1 ? 1.f : 0.f; ADustlineCar::GSnow = I == 2 ? 1.f : 0.f; }, 17.f) ];
+	[ SNew(STextBlock).Font(Font(18.f)).ColorAndOpacity(Label2()).Text_Lambda([C]() { return FText::FromString(C ? FString::Printf(TEXT("%s  \u00B7  %.0f \u00B0C  \u00B7  %s"), *C->WeatherLabel, C->TempC, *C->SurfaceName) : FString()); }) ];
 	V->AddSlot().AutoHeight().Padding(0, 22, 0, 0)[ SNew(SBox).HeightOverride(1.f)[ SNew(SBorder).BorderImage(Box(Hair(), 0.f)) ] ];
 	V->AddSlot().AutoHeight().Padding(0, 12, 0, 0)[ Button(TEXT("Menú principal"), [Weak]() { if (auto M = Weak.Pin()) M->ShowMain(); }, EBtn::Plain, 0.f, 21.f) ];
 
@@ -229,10 +227,12 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 			Row(TEXT("Cámara"), Segmented({ TEXT("Cercana"), TEXT("Media"), TEXT("Lejana") }, [C]() { return C ? C->CamMode : 0; }, [C](int32 I) { if (C) C->CamMode = I; }), TEXT("También con la tecla C")),
 			SliderRow(TEXT("Campo de visión"), 60.f, 110.f, [&S]() { return S.Fov; }, [&S](float V2) { S.Fov = V2; }, [](float V2) { return FString::Printf(TEXT("%.0f°"), V2); }, FSimpleDelegate(), FSimpleDelegate::CreateLambda([&S]() { S.Save(); }), 1.f),
 			Row(TEXT("Unidades de velocidad"), Segmented({ TEXT("km/h"), TEXT("mph") }, [&S]() { return S.Units; }, [&S](int32 I) { S.Units = I; S.Save(); })) }));
-		Add(Section(TEXT("Clima")));
-		Add(Group({ Row(TEXT("Condiciones"), Segmented({ TEXT("Despejado"), TEXT("Lluvia"), TEXT("Nieve") },
-			[]() { return ADustlineCar::GSnow > 0.5f ? 2 : (ADustlineCar::GWet > 0.5f ? 1 : 0); },
-			[](int32 I) { ADustlineCar::GWet = I == 1 ? 1.f : 0.f; ADustlineCar::GSnow = I == 2 ? 1.f : 0.f; }), TEXT("Cambia el agarre: barro con lluvia, hielo con nieve")) }));
+		Add(Section(TEXT("Asistencias")));
+		Add(Group({
+			Row(TEXT("Cambio"), Segmented({ TEXT("Automático"), TEXT("Manual") }, [&S]() { return S.bManual ? 1 : 0; }, [&S](int32 I) { S.bManual = I == 1; S.Save(); }), TEXT("En manual: E sube, Q baja (desde 1ª, marcha atrás)")),
+			Row(TEXT("ABS"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bAbs; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bAbs = B; S.Save(); })), TEXT("Sin ABS las ruedas se bloquean al frenar fuerte y el coche desliza")),
+			Row(TEXT("Control de tracción"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bTc; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bTc = B; S.Save(); })), TEXT("Sin él, a fondo en barro o nieve las ruedas patinan y el coche se entierra")) }));
+		Add(SNew(SBox).Padding(FMargin(20, 12, 20, 0))[ Text(TEXT("El clima no se elige: cambia solo y depende de la zona del mapa. Frentes de lluvia y nieve cruzan con el viento, la montaña es más fría y el suelo se moja, se embarra, se hiela o se cubre de nieve poco a poco."), 15.f, Label2()) ]);
 		Add(Section(TEXT("Interfaz")));
 		Add(Group({
 			Row(TEXT("Mostrar velocímetro"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bHUD; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bHUD = B; S.Save(); }))),
@@ -245,7 +245,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 		Add(Group({ Row(TEXT("Acelerar / frenar y marcha atrás"), Keys({ TEXT("W"), TEXT("S") })), Row(TEXT("Girar"), Keys({ TEXT("A"), TEXT("D") })), Row(TEXT("Freno de mano"), Keys({ TEXT("Espacio") })),
 			Row(TEXT("Turbo"), Keys({ TEXT("Shift") })), Row(TEXT("Enderezar el coche"), Keys({ TEXT("R") })) }));
 		Add(Section(TEXT("Juego")));
-		Add(Group({ Row(TEXT("Cambiar de cámara"), Keys({ TEXT("C") })), Row(TEXT("Clima: despejado, lluvia, nieve"), Keys({ TEXT("1"), TEXT("2"), TEXT("3") })), Row(TEXT("Taller"), Keys({ TEXT("G") })), Row(TEXT("Pausa y menú"), Keys({ TEXT("Esc") })) }));
+		Add(Group({ Row(TEXT("Cambiar de cámara"), Keys({ TEXT("C") })), Row(TEXT("Bloquear diferenciales"), Keys({ TEXT("B") })), Row(TEXT("Reductora (parado o muy despacio)"), Keys({ TEXT("L") })), Row(TEXT("Cambio manual: subir / bajar"), Keys({ TEXT("E"), TEXT("Q") })), Row(TEXT("Taller"), Keys({ TEXT("G") })), Row(TEXT("Pausa y menú"), Keys({ TEXT("Esc") })) }));
 	}
 	else // Acerca de
 	{
@@ -326,8 +326,21 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 4, 0, 0)
 		[ SNew(STextBlock).Font(Font(20.f)).ColorAndOpacity(Label2()).Text_Lambda([C]()
 			{
-				const TCHAR* Wx = ADustlineCar::GSnow > 0.5f ? TEXT("Nieve") : (ADustlineCar::GWet > 0.5f ? TEXT("Lluvia") : TEXT("Despejado"));
-				return FText::FromString(FString::Printf(TEXT("%s  \u00B7  %s"), C ? *C->SurfaceName : TEXT(""), Wx));
+				if (!C) return FText();
+				return FText::FromString(FString::Printf(TEXT("%s  \u00B7  %s %.0f\u00B0"), *C->SurfaceName, *C->WeatherLabel, C->TempC));
+			}) ]
+		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6, 0, 0)
+		[ SNew(STextBlock).Font(Font(18.f, 1)).ColorAndOpacity(Label()).Text_Lambda([C]()
+			{
+				if (!C) return FText();
+				const FString G = C->Gear < 0 ? TEXT("R") : (C->Gear == 0 ? TEXT("N") : FString::FromInt(C->Gear));
+				FString Tags;
+				if (C->bLowRange) Tags += TEXT("  \u00B7  4L");
+				if (C->bDiffLock) Tags += TEXT("  \u00B7  Bloqueo");
+				if (C->bStalled) Tags += TEXT("  \u00B7  Motor ahogado");
+				else if (C->WaterDepthM > 0.05f) Tags += FString::Printf(TEXT("  \u00B7  Vadeo %.0f cm"), C->WaterDepthM * 100.f);
+				else if (C->MaxSinkM() > 0.06f) Tags += FString::Printf(TEXT("  \u00B7  Hundido %.0f cm"), C->MaxSinkM() * 100.f);
+				return FText::FromString(FString::Printf(TEXT("%s  \u00B7  %.0f rpm%s"), *G, C->Rpm, *Tags));
 			}) ],
 		40.f, FMargin(26, 24, 26, 22));
 

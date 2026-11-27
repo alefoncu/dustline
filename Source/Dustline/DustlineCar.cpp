@@ -150,9 +150,11 @@ void ADustlineCar::Rebuild()
 	{
 		const FDustlineModel& M = GetModel(Setup.Model);
 		const float gc = GroundClearance();
-		ZCom = 0.5f * (gc + BodyH());
+		// centro de masas realista (bajo: chasis, motor y ejes) en vez del centro geométrico de la carrocería
+		ZCom = gc + 0.31f * (BodyH() - gc);
 		Visual->SetRelativeLocation(FVector(0, 0, -ZCom));
-		Collision->SetBoxExtent(FVector(M.L * 0.46f, M.W * 0.47f, FMath::Max(25.f, (BodyH() - gc) * 0.45f)));
+		// la caja de barrido (árboles/rocas) cubre la parte media; el suelo lo tocan los puntos de contacto de la carrocería
+		Collision->SetBoxExtent(FVector(M.L * 0.46f, M.W * 0.47f, FMath::Clamp((ZCom - gc) * 0.75f, 18.f, (BodyH() - gc) * 0.45f)));
 		ComputeSpec();
 	}
 }

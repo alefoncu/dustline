@@ -4,6 +4,13 @@
 #include "LandscapeProxy.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Algo/Sort.h"
+#include "Async/ParallelFor.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
+#include "Engine/Texture2D.h"
+#include "Engine/StaticMeshActor.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #if WITH_EDITOR
@@ -125,6 +132,164 @@ namespace
 	}
 }
 
+namespace
+{
+	// Agua horneada (en la misma rejilla que el terreno): nivel del agua (cm, -1e9 = seco), corriente (m/s) y distancia al agua (m)
+	TArray<float> GWaterCm, GFlowX, GFlowY, GWaterDistM;
+
+	/** Hidrología sobre la rejilla en metros: relleno de cuencas (priority-flood), acumulación de caudal D8,
+	 *  ríos excavados con cauce y orillas, y lagos de montaña en las cuencas cerradas. El mar (z<0) lo pone el plano de agua. */
+	void Hydrology(TArray<float>& Hm, int32 N, float CellM)
+	{
+		const int32 NN = N * N;
+		const int32 DX[8] = { 1, -1, 0, 0, 1, 1, -1, -1 }, DY[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
+		const float DL[8] = { 1, 1, 1, 1, 1.4142f, 1.4142f, 1.4142f, 1.4142f };
+		// 1) relleno de depresiones
+		TArray<float> F = Hm; TArray<uint8> Done; Done.SetNumZeroed(NN);
+		struct FQ { float H; int32 I; bool operator<(const FQ& O) const { return H < O.H; } };
+		TArray<FQ> Heap; Heap.Reserve(NN / 4);
+		for (int32 i = 0; i < NN; ++i)
+		{
+			const int32 x = i % N, y = i / N;
+			if (x == 0 || y == 0 || x == N - 1 || y == N - 1 || Hm[i] < 0.f) { F[i] = FMath::Max(Hm[i], 0.f); Done[i] = 1; Heap.HeapPush({ F[i], i }); }
+		}
+		while (Heap.Num())
+		{
+			FQ Q; Heap.HeapPop(Q, EAllowShrinking::No);
+			const int32 x = Q.I % N, y = Q.I / N;
+			for (int32 k = 0; k < 8; ++k)
+			{
+				const int32 xx = x + DX[k], yy = y + DY[k];
+				if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+				const int32 j = yy * N + xx; if (Done[j]) continue;
+				Done[j] = 1; F[j] = FMath::Max(Hm[j], F[Q.I] + 1e-4f * DL[k]); Heap.HeapPush({ F[j], j });
+			}
+		}
+		// 2) dirección de flujo y acumulación
+		TArray<int32> Down; Down.Init(-1, NN);
+		for (int32 i = 0; i < NN; ++i)
+		{
+			const int32 x = i % N, y = i / N; float BestD = 0.f; int32 B = -1;
+			for (int32 k = 0; k < 8; ++k)
+			{
+				const int32 xx = x + DX[k], yy = y + DY[k];
+				if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+				const float D = (F[i] - F[yy * N + xx]) / DL[k];
+				if (D > BestD) { BestD = D; B = yy * N + xx; }
+			}
+			Down[i] = B;
+		}
+		TArray<int32> Order; Order.SetNumUninitialized(NN); for (int32 i = 0; i < NN; ++i) Order[i] = i;
+		Algo::Sort(Order, [&F](int32 A, int32 B) { return F[A] > F[B]; });
+		TArray<float> Acc; Acc.Init(1.f, NN);
+		for (int32 i : Order) if (Down[i] >= 0) Acc[Down[i]] += Acc[i];
+
+		GWaterCm.Init(-1e9f, NN); GFlowX.Init(0.f, NN); GFlowY.Init(0.f, NN);
+		TArray<float> BestAcc; BestAcc.Init(0.f, NN);
+		// 3) lagos: cuencas rellenas de al menos ~0,6 m de fondo y 60 celdas
+		{
+			TArray<uint8> Lake; Lake.SetNumZeroed(NN);
+			for (int32 i = 0; i < NN; ++i) if (Hm[i] >= 0.f && F[i] - Hm[i] > 0.2f) Lake[i] = 1;
+			TArray<int32> Stack, Comp; int32 NumLakes = 0;
+			for (int32 s = 0; s < NN; ++s)
+			{
+				if (Lake[s] != 1) continue;
+				Comp.Reset(); Stack.Reset(); Stack.Add(s); Lake[s] = 2; float MaxD = 0.f;
+				while (Stack.Num())
+				{
+					const int32 c = Stack.Pop(EAllowShrinking::No); Comp.Add(c); MaxD = FMath::Max(MaxD, F[c] - Hm[c]);
+					const int32 x = c % N, y = c / N;
+					for (int32 k = 0; k < 4; ++k)
+					{
+						const int32 xx = x + DX[k], yy = y + DY[k];
+						if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+						const int32 j = yy * N + xx; if (Lake[j] == 1) { Lake[j] = 2; Stack.Add(j); }
+					}
+				}
+				// el lago solo ocupa el fondo de la cuenca (no se rellena hasta el collado): profundidad según su tamaño
+				if (Comp.Num() >= 200 && MaxD >= 0.6f)
+				{
+					float Hmin = 1e9f; for (int32 c : Comp) Hmin = FMath::Min(Hmin, Hm[c]);
+					const float Level = Hmin + FMath::Min(MaxD, 1.2f + 0.6f * FMath::LogX(10.f, (float)Comp.Num()));
+					int32 Cells = 0;
+					for (int32 c : Comp) if (Hm[c] < Level - 0.05f) { GWaterCm[c] = Level * 100.f; ++Cells; }
+					if (Cells > 0) ++NumLakes;
+				}
+			}
+			UE_LOG(LogDustlineTerrain, Display, TEXT("Lakes: %d"), NumLakes);
+		}
+		// 4) ríos: cauce con forma de U, orillas en talud y nivel de agua algo por debajo del terreno original
+		const float A0 = 2500.f;
+		TArray<float> Carved = Hm; int32 RiverCells = 0;
+		for (int32 c = 0; c < NN; ++c)
+		{
+			if (Acc[c] < A0 || Hm[c] < 0.f || GWaterCm[c] > -1e8f) continue;
+			if (F[c] - Hm[c] > 0.2f) continue;   // dentro de una cuenca cerrada el arroyo se pierde (no flota sobre el relleno)
+			{ const int32 Edge = N / 12, x = c % N, y = c / N; if (x < Edge || y < Edge || x >= N - Edge || y >= N - Edge) continue; }
+			++RiverCells;
+			const float Q = Acc[c] / A0;
+			const float W = FMath::Clamp(3.f * FMath::Pow(Q, 0.38f), 2.5f, 26.f), D = FMath::Clamp(0.35f * FMath::Pow(Q, 0.3f), 0.3f, 2.0f);
+			const float Surf = F[c] - 0.3f - 0.2f * D;
+			FVector2f Dir(0, 0); float Slope = 0.f;
+			if (Down[c] >= 0) { Dir = FVector2f(float(Down[c] % N - c % N), float(Down[c] / N - c / N)); const float L = Dir.Size(); Dir /= FMath::Max(L, 1e-3f); Slope = (F[c] - F[Down[c]]) / (L * CellM); }
+			const float Speed = FMath::Clamp(0.5f + 25.f * Slope, 0.4f, 3.5f) * FMath::Clamp(D / 0.6f, 0.6f, 1.3f);
+			const float Half = W * 0.5f, Rb = Half + 4.f;
+			const int32 Rc = FMath::CeilToInt(Rb / CellM);
+			const int32 cx = c % N, cy = c / N;
+			for (int32 dy = -Rc; dy <= Rc; ++dy) for (int32 dx = -Rc; dx <= Rc; ++dx)
+			{
+				const int32 xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+				const float R = FMath::Sqrt(float(dx * dx + dy * dy)) * CellM; if (R > Rb) continue;
+				const int32 q = yy * N + xx;
+				float Target;
+				if (R <= Half) { const float T = R / Half; Target = Surf - D * (1.f - T * T) * 0.9f - 0.1f * D; }
+				else Target = Surf - 0.1f * D + (R - Half) * 0.5f;
+				Carved[q] = FMath::Min(Carved[q], Target);
+				if (R <= Half + CellM * 0.75f)
+				{
+					GWaterCm[q] = FMath::Max(GWaterCm[q], Surf * 100.f);
+					if (Acc[c] > BestAcc[q]) { BestAcc[q] = Acc[c]; GFlowX[q] = Dir.X * Speed; GFlowY[q] = Dir.Y * Speed; }
+				}
+			}
+		}
+		Hm = Carved;
+		// un agua no puede quedar por debajo del fondo (por el redondeo): si el terreno quedó encima, la celda es seca
+		for (int32 i = 0; i < NN; ++i) if (GWaterCm[i] > -1e8f && GWaterCm[i] < Hm[i] * 100.f + 2.f) GWaterCm[i] = -1e9f;
+		// 5) distancia al agua (incluido el mar) en metros, transformada de distancia chaflán de dos pasadas
+		GWaterDistM.Init(1e6f, NN);
+		for (int32 i = 0; i < NN; ++i) if (GWaterCm[i] > -1e8f || Hm[i] < 0.f) GWaterDistM[i] = 0.f;
+		auto Relax = [&](int32 i, int32 j, float L) { if (GWaterDistM[j] + L < GWaterDistM[i]) GWaterDistM[i] = GWaterDistM[j] + L; };
+		for (int32 y = 0; y < N; ++y) for (int32 x = 0; x < N; ++x)
+		{
+			const int32 i = y * N + x;
+			if (x > 0) Relax(i, i - 1, CellM); if (y > 0) Relax(i, i - N, CellM);
+			if (x > 0 && y > 0) Relax(i, i - N - 1, CellM * 1.4142f); if (x < N - 1 && y > 0) Relax(i, i - N + 1, CellM * 1.4142f);
+		}
+		for (int32 y = N - 1; y >= 0; --y) for (int32 x = N - 1; x >= 0; --x)
+		{
+			const int32 i = y * N + x;
+			if (x < N - 1) Relax(i, i + 1, CellM); if (y < N - 1) Relax(i, i + N, CellM);
+			if (x < N - 1 && y < N - 1) Relax(i, i + N + 1, CellM * 1.4142f); if (x > 0 && y < N - 1) Relax(i, i + N - 1, CellM * 1.4142f);
+		}
+		int32 Wet = 0; for (int32 i = 0; i < NN; ++i) if (GWaterCm[i] > -1e8f) ++Wet;
+		UE_LOG(LogDustlineTerrain, Display, TEXT("Rivers: %d channel cells, %d water cells (%.1f%%)"), RiverCells, Wet, 100.f * Wet / NN);
+	}
+}
+
+namespace
+{
+	float SampleGrid(const TArray<float>& A, float X, float Y, float Def)
+	{
+		if (GSize <= 0 || A.Num() != GSize * GSize) return Def;
+		const float Fx = (X - GOrigin.X) / GXYScale, Fy = (Y - GOrigin.Y) / GXYScale;
+		if (Fx < 0 || Fy < 0 || Fx >= GSize - 1 || Fy >= GSize - 1) return Def;
+		const int32 Ix = (int32)Fx, Iy = (int32)Fy; const float U = Fx - Ix, V = Fy - Iy;
+		const int32 i = Iy * GSize + Ix;
+		return A[i] * (1 - U) * (1 - V) + A[i + 1] * U * (1 - V) + A[i + GSize] * (1 - U) * V + A[i + GSize + 1] * U * V;
+	}
+	float WaterDistAt(float X, float Y) { return SampleGrid(GWaterDistM, X, Y, 1e6f); }
+}
+
 ALandscape* UDustlineTerrainLibrary::CreateProceduralLandscape(UObject* WorldContextObject, int32 Size, int32 Seed, float XYScale, float ZScale,
 	float MaxHeightMeters, int32 ErosionDroplets, bool bCenterOnOrigin, float WaterPercentile)
 {
@@ -195,9 +360,13 @@ ALandscape* UDustlineTerrainLibrary::CreateProceduralLandscape(UObject* WorldCon
 	const float CmPerUnit = ZScale / 128.f;
 	TArray<uint16> Data; Data.SetNumUninitialized(N * N);
 	GHeightCm.SetNumUninitialized(N * N); GSize = N; GXYScale = XYScale;
+	TArray<float> Hm; Hm.SetNumUninitialized(N * N);
+	for (int32 i = 0; i < N * N; ++i) Hm[i] = ((H[i] - MinH) / Range) * MaxHeightMeters - WaterOffsetM;
+	Hydrology(Hm, N, XYScale / 100.f);   // ríos excavados + lagos: modifica Hm y rellena GWaterCm/GFlow/GWaterDistM
+	UE_LOG(LogDustlineTerrain, Display, TEXT("Hydrology done in %.1fs"), FPlatformTime::Seconds() - T0);
 	for (int32 i = 0; i < N * N; ++i)
 	{
-		const float Meters = ((H[i] - MinH) / Range) * MaxHeightMeters - WaterOffsetM;
+		const float Meters = Hm[i];
 		const uint16 V16 = (uint16)FMath::Clamp(FMath::RoundToInt(32768.f + Meters * 100.f / CmPerUnit), 0, 65535);
 		Data[i] = V16;
 		GHeightCm[i] = ((float)V16 - 32768.f) * CmPerUnit;
@@ -255,6 +424,7 @@ FVector UDustlineTerrainLibrary::FindSpawnLocation(UObject* WorldContextObject)
 			const float X = FMath::Cos(Ang) * R, Y = FMath::Sin(Ang) * R;
 			const float Z = GetTerrainHeight(WorldContextObject, X, Y);
 			if (Z < 500.f || Z > 6000.f) continue; // above water, below high alpine
+			if (WaterDistAt(X, Y) < 20.f) continue;
 			const float Zx = GetTerrainHeight(WorldContextObject, X + 600, Y), Zy = GetTerrainHeight(WorldContextObject, X, Y + 600);
 			const float Slope = FMath::Max(FMath::Abs(Zx - Z), FMath::Abs(Zy - Z)) / 600.f;
 			if (Slope < Best && Slope < 0.12f) { Best = Slope; OutLocation = FVector(X, Y, Z + 200.f); bFound = true; }
@@ -280,6 +450,7 @@ AActor* UDustlineTerrainLibrary::ScatterInstances(UObject* WorldContextObject, U
 		const float X = GOrigin.X + Rng.FRandRange(Margin, 2 * Half - Margin);
 		const float Y = GOrigin.Y + Rng.FRandRange(Margin, 2 * Half - Margin);
 		if (X * X + Y * Y < 2500.f * 2500.f) continue; // clear area around the origin
+		if (WaterDistAt(X, Y) < 3.f) continue;          // nada dentro de ríos/lagos ni pegado a la orilla
 		const float Z = GetTerrainHeight(WorldContextObject, X, Y);
 		if (Z < MinZCm || Z > MaxZCm) continue;
 		const float Zx = GetTerrainHeight(WorldContextObject, X + 200.f, Y), Zy = GetTerrainHeight(WorldContextObject, X, Y + 200.f);
@@ -446,6 +617,219 @@ UStaticMesh* UDustlineTerrainLibrary::CreateProceduralConifer(const FString& Pac
 	}
 	FAssetRegistryModule::AssetCreated(SM);
 	SM->MarkPackageDirty();
+	return SM;
+#else
+	return nullptr;
+#endif
+}
+
+// ======================================================================================
+// Horneado de datos del mundo: máscara de superficies, agua para la física y mallas de agua
+// ======================================================================================
+int32 UDustlineTerrainLibrary::BakeWorldData(UObject* WorldContextObject, UMaterialInterface* WaterMaterial)
+{
+#if WITH_EDITOR
+	UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull) : nullptr;
+	if (!World || GSize <= 0 || GWaterCm.Num() != GSize * GSize) { UE_LOG(LogDustlineTerrain, Error, TEXT("Bake: hay que crear antes el terreno en esta sesión")); return 0; }
+	const double T0 = FPlatformTime::Seconds();
+	const int32 N = GSize; const float Half = (N - 1) * GXYScale * 0.5f, Size = 2.f * Half;
+	auto H = [&](float X, float Y) { return SampleGrid(GHeightCm, X, Y, 0.f); };
+	auto Sm = [](float A, float B, float X) { const float T = FMath::Clamp((X - A) / (B - A), 0.f, 1.f); return T * T * (3.f - 2.f * T); };
+
+	// ---- 1. máscara 2048² (R tierra, G barro, B hierba alta, A grava) ----
+	const int32 M = 2048;
+	TArray<uint8> RGBA; RGBA.SetNumUninitialized(M * M * 4);
+	ParallelFor(M, [&](int32 py)
+	{
+		for (int32 px = 0; px < M; ++px)
+		{
+			const float X = -Half + (px + 0.5f) / M * Size, Y = -Half + (py + 0.5f) / M * Size;
+			const float Z = H(X, Y);
+			const float Zx = H(X + 200.f, Y), Zy = H(X, Y + 200.f);
+			const float Nz = FVector(-(Zx - Z) / 200.f, -(Zy - Z) / 200.f, 1.f).GetSafeNormal().Z;
+			const float Slope = 1.f - Nz, Flat = Sm(0.88f, 0.97f, Nz);
+			const float Wd = WaterDistAt(X, Y);
+			const float East = FMath::Clamp(X / Half, -1.f, 1.f) * 0.5f + 0.5f;
+			const uint32 S = 1337u;
+			const float nA = Fbm(X / 6000.f, Y / 6000.f, 4, S + 11), nB = Fbm(X / 3500.f + 31.f, Y / 3500.f - 7.f, 4, S + 23);
+			const float nC = Fbm(X / 9000.f - 5.f, Y / 9000.f + 13.f, 4, S + 37), nD = Fbm(X / 2200.f + 3.f, Y / 2200.f + 9.f, 3, S + 51);
+			// tierra: claros de suelo desnudo, laderas medias de suelo fino, el este seco y la alta montaña pelada
+			float Dirt = Sm(0.60f, 0.72f, nA) + 0.3f * Sm(0.16f, 0.26f, Slope) + 0.3f * Sm(0.5f, 0.95f, East) * Sm(0.52f, 0.66f, nD) + 0.4f * Sm(23000.f, 27000.f, Z);
+			// barro permanente: vegas junto al agua y hondonadas bajas
+			float Mud = Sm(22.f, 5.f, Wd) * Flat * Sm(0.42f, 0.55f, nB) * (Wd > 0.f ? 1.f : 0.f) + Sm(0.62f, 0.72f, nB) * Sm(5000.f, 1500.f, Z) * Flat;
+			// hierba alta: praderas llanas de media altura, más en el oeste húmedo
+			float Tall = Sm(0.40f, 0.54f, nC) * Sm(0.82f, 0.93f, Nz) * Sm(300.f, 1200.f, Z) * (1.f - Sm(19000.f, 23000.f, Z)) * (0.7f + 0.3f * (1.f - East));
+			// grava: lechos y orillas de río, pedreras al pie de las paredes de roca, manchas en la montaña
+			float Grav = Sm(7.f, 1.5f, Wd) + 0.8f * Sm(0.14f, 0.24f, Slope) * Sm(14000.f, 21000.f, Z) + 0.6f * Sm(0.64f, 0.74f, nD) * Sm(12000.f, 18000.f, Z);
+			Dirt = FMath::Clamp(Dirt, 0.f, 1.f); Mud = FMath::Clamp(Mud, 0.f, 1.f); Grav = FMath::Clamp(Grav, 0.f, 1.f);
+			Tall = FMath::Clamp(Tall * (1.f - 0.7f * Dirt) * (1.f - 0.6f * Mud) * (1.f - 0.8f * Grav), 0.f, 1.f);
+			uint8* P = &RGBA[(py * M + px) * 4];
+			P[0] = (uint8)FMath::RoundToInt(Dirt * 255.f); P[1] = (uint8)FMath::RoundToInt(Mud * 255.f); P[2] = (uint8)FMath::RoundToInt(Tall * 255.f); P[3] = (uint8)FMath::RoundToInt(Grav * 255.f);
+		}
+	});
+	{
+		TArray<uint8> BGRA; BGRA.SetNumUninitialized(M * M * 4);
+		for (int32 i = 0; i < M * M; ++i) { BGRA[i * 4 + 0] = RGBA[i * 4 + 2]; BGRA[i * 4 + 1] = RGBA[i * 4 + 1]; BGRA[i * 4 + 2] = RGBA[i * 4 + 0]; BGRA[i * 4 + 3] = RGBA[i * 4 + 3]; }
+		const TCHAR* TexPath = TEXT("/Game/Terrain/T_SurfaceMask");
+		UTexture2D* Tex = LoadObject<UTexture2D>(nullptr, TEXT("/Game/Terrain/T_SurfaceMask.T_SurfaceMask"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		bool bNew = false;
+		if (!Tex) { UPackage* Pkg = CreatePackage(TexPath); Tex = NewObject<UTexture2D>(Pkg, TEXT("T_SurfaceMask"), RF_Public | RF_Standalone); bNew = true; }
+		Tex->PreEditChange(nullptr);
+		Tex->Source.Init(M, M, 1, 1, TSF_BGRA8, BGRA.GetData());
+		Tex->SRGB = false; Tex->CompressionSettings = TC_VectorDisplacementmap; Tex->AddressX = TA_Clamp; Tex->AddressY = TA_Clamp;
+		Tex->PostEditChange();
+		if (bNew) FAssetRegistryModule::AssetCreated(Tex);
+		Tex->MarkPackageDirty();
+	}
+	// ---- 2. world.bin para la física (máscara + corriente y profundidad del agua) ----
+	{
+		const int32 FN = 1024;
+		TArray<uint8> Out; Out.Reserve(16 + M * M * 4 + FN * FN * 4);
+		auto PutI = [&](int32 V) { Out.Append((uint8*)&V, 4); }; auto PutF = [&](float V) { Out.Append((uint8*)&V, 4); };
+		Out.Append((const uint8*)"DLW3", 4); PutI(M); PutI(FN); PutF(Half);
+		Out.Append(RGBA);
+		for (int32 py = 0; py < FN; ++py) for (int32 px = 0; px < FN; ++px)
+		{
+			const float X = -Half + (px + 0.5f) / FN * Size, Y = -Half + (py + 0.5f) / FN * Size;
+			const float Vx = SampleGrid(GFlowX, X, Y, 0.f), Vy = SampleGrid(GFlowY, X, Y, 0.f);
+			const float Z = H(X, Y);
+			// nivel del agua (vecino más próximo: la interpolación bilineal del nivel mezclaría con -1e9); el mar está a z=0
+			const int32 gx = FMath::Clamp(FMath::RoundToInt((X - GOrigin.X) / GXYScale), 0, N - 1), gy = FMath::Clamp(FMath::RoundToInt((Y - GOrigin.Y) / GXYScale), 0, N - 1);
+			float Wl = GWaterCm[gy * N + gx]; if (Z < 0.f) Wl = FMath::Max(Wl, 0.f);
+			const uint16 Lv = Wl > -1e8f ? (uint16)FMath::Clamp(FMath::RoundToInt(Wl + 1000.f), 1, 65535) : 0;
+			Out.Add((uint8)(int8)FMath::Clamp(FMath::RoundToInt(Vx * 20.f), -127, 127));
+			Out.Add((uint8)(int8)FMath::Clamp(FMath::RoundToInt(Vy * 20.f), -127, 127));
+			Out.Add((uint8)(Lv & 0xFF)); Out.Add((uint8)(Lv >> 8));
+		}
+		const FString Dir = FPaths::ProjectContentDir() / TEXT("Data");
+		IFileManager::Get().MakeDirectory(*Dir, true);
+		FFileHelper::SaveArrayToFile(Out, *(Dir / TEXT("world.bin")));
+	}
+	// ---- 3. mallas de agua de ríos y lagos, por baldosas de 128x128 celdas ----
+	int32 Meshes = 0, Quads = 0;
+	TArray<float> Dil = GWaterCm;   // nivel extendido una celda hacia la orilla (el borde de la malla queda bajo el terreno)
+	for (int32 y = 0; y < N; ++y) for (int32 x = 0; x < N; ++x)
+	{
+		const int32 i = y * N + x; if (GWaterCm[i] > -1e8f) continue;
+		float B = -1e9f;
+		for (int32 dy = -1; dy <= 1; ++dy) for (int32 dx = -1; dx <= 1; ++dx)
+		{ const int32 xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < N && yy < N) B = FMath::Max(B, GWaterCm[yy * N + xx]); }
+		Dil[i] = B;
+	}
+	const int32 TS = 128;
+	for (int32 ty = 0; ty * TS < N - 1; ++ty) for (int32 tx = 0; tx * TS < N - 1; ++tx)
+	{
+		FMeshDescription MD; FStaticMeshAttributes Attr(MD); Attr.Register();
+		TVertexAttributesRef<FVector3f> Pos = Attr.GetVertexPositions();
+		TVertexInstanceAttributesRef<FVector3f> Nrm = Attr.GetVertexInstanceNormals();
+		TVertexInstanceAttributesRef<FVector3f> Tan = Attr.GetVertexInstanceTangents();
+		TVertexInstanceAttributesRef<float> Sign = Attr.GetVertexInstanceBinormalSigns();
+		TVertexInstanceAttributesRef<FVector2f> UV = Attr.GetVertexInstanceUVs();
+		UV.SetNumChannels(1);
+		const FPolygonGroupID G = MD.CreatePolygonGroup(); Attr.GetPolygonGroupMaterialSlotNames()[G] = FName("Water");
+		TMap<int32, FVertexInstanceID> VMap; int32 TQ = 0;
+		auto Vtx = [&](int32 gx, int32 gy) -> FVertexInstanceID
+		{
+			const int32 k = gy * N + gx;
+			if (FVertexInstanceID* F = VMap.Find(k)) return *F;
+			const FVertexID V = MD.CreateVertex();
+			Pos[V] = FVector3f(GOrigin.X + gx * GXYScale, GOrigin.Y + gy * GXYScale, Dil[k] - 3.f);
+			const FVertexInstanceID I = MD.CreateVertexInstance(V);
+			Nrm[I] = FVector3f(0, 0, 1); Tan[I] = FVector3f(1, 0, 0); Sign[I] = 1.f; UV.Set(I, 0, FVector2f(gx * GXYScale / 1000.f, gy * GXYScale / 1000.f));
+			VMap.Add(k, I); return I;
+		};
+		for (int32 y = ty * TS; y < FMath::Min((ty + 1) * TS, N - 1); ++y) for (int32 x = tx * TS; x < FMath::Min((tx + 1) * TS, N - 1); ++x)
+		{
+			const int32 a = y * N + x, b = a + 1, c = a + N, d = a + N + 1;
+			if (GWaterCm[a] < -1e8f && GWaterCm[b] < -1e8f && GWaterCm[c] < -1e8f && GWaterCm[d] < -1e8f) continue;
+			if (Dil[a] < -1e8f || Dil[b] < -1e8f || Dil[c] < -1e8f || Dil[d] < -1e8f) continue;
+			if (!FMath::IsFinite(Dil[a]) || !FMath::IsFinite(Dil[b]) || !FMath::IsFinite(Dil[c]) || !FMath::IsFinite(Dil[d])) continue;
+			const FVertexInstanceID A = Vtx(x, y), B = Vtx(x + 1, y), C = Vtx(x, y + 1), D = Vtx(x + 1, y + 1);
+			MD.CreatePolygon(G, TArray<FVertexInstanceID>{ A, C, D }); MD.CreatePolygon(G, TArray<FVertexInstanceID>{ A, D, B });
+			++TQ;
+		}
+		if (TQ == 0) continue;
+		Quads += TQ;
+		const FString Name = FString::Printf(TEXT("SM_Water_%02d_%02d"), tx, ty);
+		UPackage* Pkg = CreatePackage(*(TEXT("/Game/Water/Rivers/") + Name));
+		UStaticMesh* SM = NewObject<UStaticMesh>(Pkg, *Name, RF_Public | RF_Standalone);
+		SM->GetStaticMaterials().Add(FStaticMaterial(WaterMaterial, FName("Water")));
+		UStaticMesh::FBuildMeshDescriptionsParams Params; Params.bMarkPackageDirty = true; Params.bBuildSimpleCollision = false; Params.bFastBuild = true;
+		SM->BuildFromMeshDescriptions(TArray<const FMeshDescription*>{ &MD }, Params);
+		FAssetRegistryModule::AssetCreated(SM); SM->MarkPackageDirty();
+		AStaticMeshActor* A = World->SpawnActor<AStaticMeshActor>(FVector::ZeroVector, FRotator::ZeroRotator);
+		A->SetActorLabel(Name); A->Tags.Add(FName("DustlineWater"));
+		UStaticMeshComponent* C = A->GetStaticMeshComponent();
+		C->SetStaticMesh(SM); C->SetMaterial(0, WaterMaterial); C->SetCastShadow(false);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);   // la física lee el nivel del agua de world.bin
+		++Meshes;
+	}
+	UE_LOG(LogDustlineTerrain, Display, TEXT("BAKE done in %.1fs: mask %d², %d water meshes, %d quads"), FPlatformTime::Seconds() - T0, M, Meshes, Quads);
+	return Meshes;
+#else
+	return 0;
+#endif
+}
+
+UStaticMesh* UDustlineTerrainLibrary::CreateProceduralGrass(const FString& PackagePath, const FString& AssetName, int32 Seed, float HeightCm, int32 Blades, UMaterialInterface* Material)
+{
+#if WITH_EDITOR
+	auto Build = [&](FMeshDescription& MD, int32 NB, int32 Segs, float WMul)
+	{
+		FRandomStream Rng(Seed);
+		FStaticMeshAttributes Attr(MD); Attr.Register();
+		TVertexAttributesRef<FVector3f> Pos = Attr.GetVertexPositions();
+		TVertexInstanceAttributesRef<FVector3f> Nrm = Attr.GetVertexInstanceNormals();
+		TVertexInstanceAttributesRef<FVector3f> Tan = Attr.GetVertexInstanceTangents();
+		TVertexInstanceAttributesRef<float> Sign = Attr.GetVertexInstanceBinormalSigns();
+		TVertexInstanceAttributesRef<FVector2f> UV = Attr.GetVertexInstanceUVs();
+		TVertexInstanceAttributesRef<FVector4f> Col = Attr.GetVertexInstanceColors();
+		UV.SetNumChannels(1);
+		const FPolygonGroupID G = MD.CreatePolygonGroup(); Attr.GetPolygonGroupMaterialSlotNames()[G] = FName("Grass");
+		for (int32 b = 0; b < NB; ++b)
+		{
+			// cada hoja: tira de Segs tramos que se estrecha y se curva hacia fuera; color de vértice R = altura relativa, G = tono por hoja
+			const float Ang = Rng.FRandRange(0.f, 2 * PI), R0 = FMath::Sqrt(Rng.FRand()) * 22.f;
+			const FVector3f Base(FMath::Cos(Ang) * R0, FMath::Sin(Ang) * R0, -2.f);
+			const float Yaw = Ang + Rng.FRandRange(-0.9f, 0.9f);
+			const FVector3f Out(FMath::Cos(Yaw), FMath::Sin(Yaw), 0.f), Side(-Out.Y, Out.X, 0.f);
+			const float Hh = HeightCm * Rng.FRandRange(0.55f, 1.15f), Bend = Rng.FRandRange(0.15f, 0.55f), W0 = Rng.FRandRange(1.0f, 1.8f) * WMul;
+			const float Tone = Rng.FRand();
+			TArray<FVertexInstanceID> L, Rr;
+			for (int32 s = 0; s <= Segs; ++s)
+			{
+				const float T = (float)s / Segs;
+				const FVector3f C = Base + FVector3f(0, 0, Hh * T) + Out * (Bend * Hh * T * T);
+				const float Wd = W0 * (1.f - T * 0.92f);
+				const FVector3f Fwd = (FVector3f(0, 0, Hh) + Out * (2.f * Bend * Hh * T)).GetSafeNormal();
+				FVector3f N = FVector3f::CrossProduct(Side, Fwd).GetSafeNormal(); N = (N + FVector3f(0, 0, 0.8f)).GetSafeNormal();
+				for (int32 e = 0; e < 2; ++e)
+				{
+					const FVertexID V = MD.CreateVertex(); Pos[V] = C + Side * (e == 0 ? -Wd : Wd);
+					const FVertexInstanceID I = MD.CreateVertexInstance(V);
+					Nrm[I] = N; Tan[I] = Side; Sign[I] = 1.f; UV.Set(I, 0, FVector2f((float)e, 1.f - T)); Col[I] = FVector4f(T, Tone, 0, 1);
+					(e == 0 ? L : Rr).Add(I);
+				}
+			}
+			for (int32 s = 0; s < Segs; ++s)
+			{
+				MD.CreatePolygon(G, TArray<FVertexInstanceID>{ L[s], Rr[s], Rr[s + 1] });
+				MD.CreatePolygon(G, TArray<FVertexInstanceID>{ L[s], Rr[s + 1], L[s + 1] });
+			}
+		}
+	};
+	FMeshDescription MD0, MD1;
+	Build(MD0, Blades, 3, 1.f);
+	Build(MD1, FMath::Max(6, Blades / 3), 2, 1.9f);
+	const FString PackageName = PackagePath + TEXT("/") + AssetName;
+	UPackage* Pkg = CreatePackage(*PackageName);
+	UStaticMesh* SM = NewObject<UStaticMesh>(Pkg, *AssetName, RF_Public | RF_Standalone);
+	SM->GetStaticMaterials().Add(FStaticMaterial(Material, FName("Grass")));
+	UStaticMesh::FBuildMeshDescriptionsParams Params; Params.bMarkPackageDirty = true; Params.bBuildSimpleCollision = false; Params.bFastBuild = true;
+	SM->SetAutoComputeLODScreenSize(false);
+	SM->BuildFromMeshDescriptions(TArray<const FMeshDescription*>{ &MD0, &MD1 }, Params);
+	if (SM->GetNumSourceModels() > 1) { SM->GetSourceModel(0).ScreenSize.Default = 1.f; SM->GetSourceModel(1).ScreenSize.Default = 0.06f; }
+	FAssetRegistryModule::AssetCreated(SM); SM->MarkPackageDirty();
 	return SM;
 #else
 	return nullptr;

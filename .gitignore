@@ -16,3 +16,7 @@ prototype-swift/*.app
 # misc
 .DS_Store
 *.log
+# datos horneados con el mundo (tools/rebuild_world.sh los regenera)
+Content/Data/
+Content/Water/Rivers/
+Content/Terrain/T_SurfaceMask.uasset

@@ -12,6 +12,9 @@ struct FDustlineSettings
 	UPROPERTY() bool bHUD = true;
 	UPROPERTY() bool bHints = true;
 	UPROPERTY() float RenderScale = 100.f;  // % (50..100)
+	UPROPERTY() bool bManual = false;      // cambio manual (Q/E)
+	UPROPERTY() bool bAbs = true;
+	UPROPERTY() bool bTc = true;           // control de tracción
 
 	static FDustlineSettings& Get();
 	void Load();

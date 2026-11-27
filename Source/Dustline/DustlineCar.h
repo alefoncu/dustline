@@ -68,8 +68,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dustline") bool bAutoDrive = false;
 	UPROPERTY(BlueprintReadOnly, Category = "Dustline") float SpeedKmh = 0.f;
 	UPROPERTY(BlueprintReadOnly, Category = "Dustline") FString SurfaceName = TEXT("Hierba");
-	static float GWet; static float GSnow;      // weather state shared with the weather system (0..1)
 	void ResetUpright();
+	// ---- transmisión / estado para el HUD ----
+	int32 Gear = 1;              // -1 marcha atrás, 0 punto muerto, 1..N
+	float Rpm = 900.f;
+	bool bLowRange = false, bDiffLock = false, bStalled = false, bManual = false, bAbs = true, bTc = true;
+	float TcCut = 1.f;           // recorte de par del control de tracción (1 = nada)
+	float WaterDepthM = 0.f;     // agua sobre el fondo de la carrocería
+	float Flood = 0.f;           // 0..1 agua dentro del habitáculo
+	float WetTyres = 0.f;        // neumáticos mojados tras vadear
+	FString WeatherLabel; float TempC = 12.f;
+	float MaxSinkM() const { float S = 0.f; for (int32 i = 0; i < 4; ++i) S = FMath::Max(S, Wh[i].Sink); return S; }
 	// ---- garage / menús ----
 	UFUNCTION(BlueprintCallable, Category = "Dustline") void ToggleGarage();
 	UPROPERTY(BlueprintReadOnly, Category = "Dustline") bool bGarage = false;
@@ -97,11 +106,21 @@ private:
 	FVector Vel = FVector::ZeroVector, AngVel = FVector::ZeroVector;
 	float ZCom = 100.f, SteerAngle = 0.f, TurboSpool = 0.f, CamYaw = 0.f, Clock = 0.f, Accum = 0.f;
 	int32 CamMode = 0;
-	struct FWheelPhys { float Length = 0.5f; float Spin = 0.f; bool Contact = false; };
+	struct FWheelPhys { float Length = 0.5f; float Spin = 0.f; bool Contact = false; float Omega = 0.f, Sink = 0.f, Slip = 0.f, Peak = 0.15f, Load = 0.f, Comp = 0.f; int32 Surf = 0; };
 	FWheelPhys Wh[4];
-	struct FPhysSpec { float Mass, HP, FMax, VMaxGear, SpringK, SpringC, RestLen, R, Width, Inertia[3], Cd; } Sp;
+	struct FPhysSpec
+	{
+		float Mass, HP, FMax, VMaxGear, SpringK, SpringC, RestLen, R, Width, Inertia[3], Cd;
+		float TPeak, Redline, Idle, Gears[7], Final, Low, Reverse, WheelI, EngI, BrakeT, HandT, CdA, Arb, BodyBot, BodyTop, BodyL, BodyW, IntakeZ;
+		int32 NGears; bool bDiesel, bHasLow;
+	} Sp;
+	float ShiftT = 0.f, GearHold = 0.f, Clutch = 1.f, StallT = 0.f; int32 SubStep = 0;
+	FVector2D WaterFlow = FVector2D::ZeroVector; float WaterZ = -1e9f; bool bInWater = false;
+	FVector BodyPlaneP[11], BodyPlaneN[11]; bool BodyPlane[11] = {};
 	void ComputeSpec();
 	void StepPhysics(float Dt, float Throttle, float Steer, bool bHandbrake, bool bBoost);
+	void UpdateWater();
+	float EngineTorque(float RpmIn) const;
 	void UpdateVisuals(float Throttle);
 	void UpdateCamera(float Dt);
 	TSharedPtr<class SWidget> GarageWidget;

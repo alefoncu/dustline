@@ -12,9 +12,14 @@ Juego de conducción **off-road de mundo abierto** para macOS, hecho con Unreal 
 - **Interfaz estilo Apple** (Slate propio): menú principal sobre la escena viva, pausa, ajustes (gráficos, juego, controles), velocímetro con cristal esmerilado y taller de piezas (motores, turbos, ruedas, neumáticos, suspensiones, tracción, chasis y pintura). Tipografía SF del sistema (no se distribuye con el juego).
 - **Taller de piezas** (tecla **G** o «Configurar coche»): eliges entre catálogos de motor, turbo, ruedas, neumáticos, suspensión, tracción, chasis y pintura, y ves la pieza al instante (rayos X); o conduces el coche de serie.
 
+- **Conducción realista**: neumático con curva de deslizamiento combinada, ruedas con inercia propia resueltas a la vez con los diferenciales (abiertos o bloqueados), motor con curva de par y turbo con retraso, convertidor de par, cambio automático o manual, reductora, ABS y control de tracción desactivables, barras estabilizadoras y contacto de la carrocería (vuelcos, panza).
+- **Terreno que se nota**: hierba, hierba alta, tierra, grava, arena, barro, roca, nieve y hielo, cada uno con su agarre, su pico de deslizamiento, su resistencia y su hundimiento; el patinaje excava y el coche se puede atascar. La misma máscara horneada (`T_SurfaceMask` / `Content/Data/world.bin`) pinta el material y alimenta la física.
+- **Agua**: ríos excavados en el terreno a partir del caudal real de la erosión, lagos en el fondo de las cuencas y el mar; flotación por columnas, arrastre con la corriente, inundación del habitáculo y motor ahogado si la toma de aire queda bajo el agua.
+- **Clima vivo, no seleccionable**: frentes de lluvia y nieve que cruzan el mapa con el viento, más fríos en la montaña y el norte, más secos en el este; el suelo se moja (barro y charcos), se seca, se cubre de nieve o se hiela celda a celda, y eso cambia el agarre.
+
 ## Controles
 
-`W/S` acelerar y frenar · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `R` enderezar · `C` cámara · `1-3` clima (solo física por ahora) · `G` garaje · `Esc` pausa y menú.
+`W/S` acelerar y frenar (parado, `S` mete la marcha atrás) · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `B` bloqueo de diferenciales · `L` reductora · `E/Q` subir/bajar marcha (cambio manual) · `R` enderezar · `C` cámara · `G` garaje · `Esc` pausa y menú.
 
 ## Estructura
 
@@ -43,7 +48,7 @@ tools/ship.sh "mensaje"         # commit + push + empaquetar + instalar en /Appl
 
 ## Estado
 
-Prototipo en desarrollo. Pendiente: clima visual en el terreno, sonido de motor, carrocerías más realistas. Rendimiento medido: ~28 fps en un Mac de 8 GB.
+Prototipo en desarrollo. Pendiente: sonido de motor, salpicaduras y rodadas visibles, carrocerías más realistas. Rendimiento medido: ~28 fps en un Mac de 8 GB.
 
 ## Licencia
 

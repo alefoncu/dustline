@@ -4,4 +4,6 @@
 set -e
 cd "$(dirname "$0")/.."
 rm -f Content/Maps/Dustline_World.umap
+python3 tools/make_weather_textures.py /Volumes/SSD/Weather-Setup
+tools/ue.sh "$PWD/Content/Python/make_weather_assets.py" -nullrhi
 tools/ue.sh "$PWD/Content/Python/build_world.py" -nullrhi
