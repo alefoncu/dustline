@@ -231,7 +231,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 		Add(Group({
 			Row(TEXT("Cambio"), Segmented({ TEXT("Automático"), TEXT("Manual") }, [&S]() { return S.bManual ? 1 : 0; }, [&S](int32 I) { S.bManual = I == 1; S.Save(); }), TEXT("En manual: E sube, Q baja (desde 1ª, marcha atrás)")),
 			Row(TEXT("ABS"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bAbs; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bAbs = B; S.Save(); })), TEXT("Sin ABS las ruedas se bloquean al frenar fuerte y el coche desliza")),
-			Row(TEXT("Control de tracción"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bTc; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bTc = B; S.Save(); })), TEXT("Sin él, a fondo en barro o nieve las ruedas patinan y el coche se entierra")) }));
+			Row(TEXT("Control de tracción y estabilidad"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bTc; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bTc = B; S.Save(); })), TEXT("Recorta el gas si patinan las ruedas y frena una rueda si el coche se cruza (ESC en los modelos que lo traen). Sin él, a fondo en barro o nieve el coche se entierra")) }));
 		Add(SNew(SBox).Padding(FMargin(20, 12, 20, 0))[ Text(TEXT("El clima no se elige: cambia solo y depende de la zona del mapa. Frentes de lluvia y nieve cruzan con el viento, la montaña es más fría y el suelo se moja, se embarra, se hiela o se cubre de nieve poco a poco."), 15.f, Label2()) ]);
 		Add(Section(TEXT("Sonido")));
 		Add(Group({ SliderRow(TEXT("Volumen"), 0.f, 100.f, [&S]() { return S.Volume; }, [&S](float V2) { S.Volume = V2; }, [](float V2) { return FString::Printf(TEXT("%.0f %%"), V2); }, FSimpleDelegate(), FSimpleDelegate::CreateLambda([&S]() { S.Save(); }), 5.f) }));
@@ -339,6 +339,10 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 				FString Tags;
 				if (C->bLowRange) Tags += TEXT("  \u00B7  4L");
 				if (C->bDiffLock) Tags += TEXT("  \u00B7  Bloqueo");
+				if (C->bHdcActive) Tags += TEXT("  \u00B7  Descenso");
+				if (C->bEscActive) Tags += TEXT("  \u00B7  ESC");
+				if (C->DamageTotal() > 0.05f) Tags += FString::Printf(TEXT("  \u00B7  Daños %.0f %%"), C->DamageTotal() * 100.f);
+				{ const FRotator R = C->GetActorRotation(); if (FMath::Abs(R.Pitch) > 8.f || FMath::Abs(R.Roll) > 8.f) Tags += FString::Printf(TEXT("  \u00B7  %s %.0f\u00B0 / lateral %.0f\u00B0"), R.Pitch > 0.f ? TEXT("Subida") : TEXT("Bajada"), FMath::Abs(R.Pitch), FMath::Abs(R.Roll)); }
 				if (C->bStalled) Tags += TEXT("  \u00B7  Motor ahogado");
 				else if (C->WaterDepthM > 0.05f) Tags += FString::Printf(TEXT("  \u00B7  Vadeo %.0f cm"), C->WaterDepthM * 100.f);
 				else if (C->MaxSinkM() > 0.06f) Tags += FString::Printf(TEXT("  \u00B7  Hundido %.0f cm"), C->MaxSinkM() * 100.f);

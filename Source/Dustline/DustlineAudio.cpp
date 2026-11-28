@@ -19,6 +19,7 @@ void FDustlineSoundGen::Render(const FDustlineSoundParams& P, float* Out, int32 
 	const float Tgt[14] = { P.Rpm, P.Load, P.Spool, P.Speed, P.Screech, P.Gravel, P.Mud, P.Snow, P.Grass + P.Hard, P.Wade, P.Rain, P.Wind, P.Volume, P.bEngineOn ? 1.f : 0.f };
 	const float K = 1.f - FMath::Exp(-1.f / (SR * 0.04f));
 	if (P.Splash > Splash) Splash = P.Splash;
+	if (P.Impact > Thud) { Thud = P.Impact; Ring = P.Impact; }
 	if (P.BlowOff > 0.5f && Blow < 0.1f) Blow = FMath::Min(1.f, P.BlowOff);
 	const float Cyl = (float)FMath::Clamp(P.Cyl, 2, 12);
 	for (int32 n = 0; n < N; ++n)
@@ -69,7 +70,11 @@ void FDustlineSoundGen::Render(const FDustlineSoundParams& P, float* Out, int32 
 		const float WindAmt = FMath::Square(FMath::Min(V / 30.f, 1.f)) * 0.18f + Smooth[11] * 0.008f;
 		const float Wind = OnePole(LpWind, Noise(), 120.f + V * 15.f, SR) * WindAmt * 3.f;
 
-		float X = (Eng + Turbo + Roll + Crack + Squelch + Crunch + Screech + Wade + Spl + Rain + Wind) * Smooth[12];
+		// golpe: estampido grave + chapa que vibra
+		const float ThudS = OnePole(LpThud, Noise(), 180.f, SR) * Thud * 2.2f; Thud *= FMath::Exp(-1.f / (SR * 0.18f));
+		RingPhase += 210.f / SR; if (RingPhase >= 1.0) RingPhase -= 1.0;
+		const float RingS = (FMath::Sin((float)RingPhase * 2.f * PI) + 0.5f * FMath::Sin((float)RingPhase * 2.f * PI * 2.73f)) * Ring * 0.15f; Ring *= FMath::Exp(-1.f / (SR * 0.35f));
+		float X = (ThudS + RingS + Eng + Turbo + Roll + Crack + Squelch + Crunch + Screech + Wade + Spl + Rain + Wind) * Smooth[12];
 		X = X / (1.f + FMath::Abs(X));   // saturación suave
 		Out[n] = X;
 	}
@@ -85,8 +90,8 @@ UDustlineSynth::UDustlineSynth(const FObjectInitializer& OI) : Super(OI)
 void UDustlineSynth::SetParams(const FDustlineSoundParams& P)
 {
 	FScopeLock L(&Lock);
-	const float Spl = FMath::Max(Params.Splash, P.Splash);
-	Params = P; Params.Splash = Spl;
+	const float Spl = FMath::Max(Params.Splash, P.Splash), Imp = FMath::Max(Params.Impact, P.Impact);
+	Params = P; Params.Splash = Spl; Params.Impact = Imp;
 }
 
 bool UDustlineSynth::Init(int32& SampleRate)
@@ -99,7 +104,7 @@ bool UDustlineSynth::Init(int32& SampleRate)
 int32 UDustlineSynth::OnGenerateAudio(float* OutAudio, int32 NumSamples)
 {
 	FDustlineSoundParams P;
-	{ FScopeLock L(&Lock); P = Params; Params.Splash = 0.f; Params.BlowOff = 0.f; }
+	{ FScopeLock L(&Lock); P = Params; Params.Splash = 0.f; Params.BlowOff = 0.f; Params.Impact = 0.f; }
 	Gen.Render(P, OutAudio, NumSamples);
 	return NumSamples;
 }

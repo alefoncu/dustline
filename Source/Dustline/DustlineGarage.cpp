@@ -272,6 +272,7 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 
 void ADustlineCar::OpenGarage(TFunction<void()> OnClose)
 {
+	Repair();   // en el taller se arregla la chapa y la dirección
 	if (bGarage) return;
 	bGarage = true; OnGarageClosed = OnClose;
 	Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector; bGarageCamInit = false; GarageFocus = 0;
@@ -350,7 +351,7 @@ void ADustlineCar::ApplyAnims()
 {
 	if (!Visual || !Engine || !Suspension) return;
 	const float Bounce = (BounceT >= 0.f && BounceT < 1.4f) ? -6.f * FMath::Exp(-5.f * BounceT) * FMath::Cos(15.f * BounceT) : 0.f;
-	Visual->SetRelativeLocation(FVector(0.f, 0.f, -ZCom + SwapD(SwModel, 0.f) * 170.f + Bounce));
+	Visual->SetRelativeLocation(FVector(-ComX * 100.f, 0.f, -ZCom + SwapD(SwModel, 0.f) * 170.f + Bounce));
 	Engine->SetRelativeLocation(FVector(0.f, 0.f, SwapD(SwEngine, 0.f) * 120.f));
 	Suspension->SetRelativeLocation(FVector(0.f, 0.f, -SwapD(SwSusp, 0.f) * 75.f));
 	const float Reach = Setup.TireWidthM * 50.f + 140.f;

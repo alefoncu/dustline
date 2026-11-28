@@ -20,6 +20,10 @@ Juego de conducción **off-road de mundo abierto** para macOS, hecho con Unreal 
 - **Sonido procedural** (sin grabaciones): motor por armónicos de encendido según rpm, carga y cilindros (con golpeteo diésel), turbo y válvula de descarga, rodadura y suelo (grava, barro, nieve), derrapes, agua, lluvia y viento. Volumen en Ajustes → Juego.
 - **Salpicaduras, terrones de barro, nieve en polvo y polvo** según la rueda y el suelo, y **rodadas** con la huella de los tacos que se van borrando.
 
+- **Cada coche se conduce distinto**: reparto de pesos (el Panda lleva el morro pesado, el buggy el motor detrás, el pick-up la caja vacía), dirección más rápida o más lenta, suspensión blanda o firme, centro de balanceo, neumático más incisivo o más perezoso, frenos, inercia y tracción propia (4Matic 40/60 del Clase G, viscoacoplador del Panda, autoblocante trasero del buggy, 4x4 conectable rígido del pick-up que "rasca" en curvas cerradas).
+- **Choques**: impulso en el punto del golpe (el coche gira si pega con una esquina), daños por zonas (delante resta potencia y puede calar el motor, los laterales tuercen la dirección), golpe sonoro y sacudida de cámara. El taller lo repara.
+- **Cuestas y ayudas**: control de descenso con la reductora, retención en pendiente, inclinómetro en el HUD, ESC que frena una rueda si el coche se cruza (en los modelos que lo traen) y aquaplaning en llano encharcado a partir de ~50 km/h.
+
 ## Controles
 
 `W/S` acelerar y frenar (parado, `S` mete la marcha atrás) · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `B` bloqueo de diferenciales · `L` reductora · `E/Q` subir/bajar marcha (cambio manual) · `R` enderezar · `C` cámara · `G` garaje · `Esc` pausa y menú.

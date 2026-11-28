@@ -8,6 +8,7 @@
 #include "DustlineMenu.h"
 #include "DustlineSettings.h"
 #include "DustlineWorld.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformMisc.h"
@@ -88,11 +89,12 @@ void ADustlineCar::ComputeSpec()
 	Sp.FMax = peak * 38.f * (0.46f / R);
 	Sp.VMaxGear = 34.f * (R / 0.46f) * (1.f + 0.12f * Setup.Turbo) * (M.Style == 2 ? 0.8f : 1.f);
 	Sp.SpringK = 30000.f * (Sp.Mass / 1500.f) * Setup.Stiffness;
-	Sp.SpringC = 0.42f * 2.f * FMath::Sqrt(Sp.SpringK * Sp.Mass / 4.f);
-	Sp.Arb = Sp.SpringK * 0.55f;
+	const FHandling& Hh = HandlingFor(M.Style);
+	Sp.SpringC = Hh.Damp * 2.f * FMath::Sqrt(Sp.SpringK * Sp.Mass / 4.f);
+	Sp.Arb = Sp.SpringK * Hh.Arb;
 	Sp.RestLen = Setup.TravelM;
 	const float L = M.L / 100.f, Wd = M.W / 100.f, H = M.H / 100.f;
-	Sp.Inertia[0] = Sp.Mass / 12.f * (H * H + L * L) * 1.1f; Sp.Inertia[1] = Sp.Mass / 12.f * (Wd * Wd + L * L) * 1.1f; Sp.Inertia[2] = Sp.Mass / 12.f * (Wd * Wd + H * H) * 1.3f;
+	Sp.Inertia[0] = Sp.Mass / 12.f * (H * H + L * L) * 1.1f; Sp.Inertia[1] = Sp.Mass / 12.f * (Wd * Wd + L * L) * 1.1f * Hh.YawI; Sp.Inertia[2] = Sp.Mass / 12.f * (Wd * Wd + H * H) * 1.3f;
 	Sp.Cd = M.Style == 4 ? 0.7f : 1.1f;
 	// motor
 	const int32 St = M.Style;
@@ -113,7 +115,7 @@ void ADustlineCar::ComputeSpec()
 	const float Mw = 22.f * (R / 0.4f) * (R / 0.4f) * (W / 0.28f) + 8.f;
 	Sp.WheelI = 0.6f * Mw * R * R;
 	Sp.EngI = 0.15f + Setup.EngineCC * 0.00003f;
-	Sp.BrakeT = 1.15f * Sp.Mass * Gr * R;          // par total de freno (reparto 64/36)
+	Sp.BrakeT = 1.15f * Sp.Mass * Gr * R * Hh.Brake;          // par total de freno (reparto 64/36)
 	Sp.HandT = 0.35f * Sp.Mass * Gr * R;           // por rueda trasera
 	const float CdA[7] = { 1.65f, 1.6f, 0.9f, 1.6f, 1.0f, 1.5f, 1.8f };
 	Sp.CdA = CdA[FMath::Clamp(St, 0, 6)];
@@ -143,6 +145,7 @@ void ADustlineCar::BeginPlay()
 	Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
 	for (FWheelPhys& W : Wh) { W.Omega = 0.f; W.Sink = 0.f; }
 	Gear = 1; Rpm = Sp.Idle;
+	bDiffLock = Hd().bLockers;
 	InitFx();
 	UE_LOG(LogDustlineDrive, Display, TEXT("DRIVE_START model=%d mass=%.0f hp=%.0f tpeak=%.0f r1=%.1f rtop=%.1f autodrive=%d loc=%s"), Setup.Model, Sp.Mass, Sp.HP, Sp.TPeak, Sp.Gears[0], Sp.Gears[Sp.NGears - 1], bAutoDrive ? 1 : 0, *GetActorLocation().ToString());
 }
@@ -178,8 +181,9 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	FVector P = GetActorLocation() / 100.0;
 	const FVector Fwd = Q.RotateVector(FVector(1, 0, 0)), UpB = Q.RotateVector(FVector(0, 0, 1));
 	const float vLong = FVector::DotProduct(Vel, Fwd);
-	const float maxSteer = 0.62f / (1.f + FMath::Abs(vLong) * 0.045f);
-	SteerAngle += (Steer * maxSteer - SteerAngle) * FMath::Min(1.f, dt * 7.f);
+	const FHandling& H = Hd();
+	const float maxSteer = H.SteerMax / (1.f + FMath::Abs(vLong) * H.SteerSens);
+	SteerAngle += (Steer * maxSteer - SteerAngle) * FMath::Min(1.f, dt * H.SteerRate);
 	++SubStep;
 
 	// ---------------- mandos -> acelerador, freno y marcha ----------------
@@ -203,6 +207,9 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	}
 	const bool bAutoHold = thr < 0.02f && brake < 0.02f && !bHandbrake && Vel.Size() < 0.5f;
 	if (bAutoHold) brake = 0.4f;
+	// control de descenso (con la reductora y sin pisar nada): mantiene ~8 km/h cuesta abajo frenando rueda a rueda
+	bHdcActive = bLowRange && thr < 0.05f && brake < 0.05f && !bHandbrake && Vel.Size() > 2.f && Vel.Z < -0.25f;
+	if (bHdcActive) brake = FMath::Clamp((Vel.Size() - 2.2f) / 1.5f + 0.15f, 0.15f, 1.f);
 
 	// ---------------- motor, turbo y convertidor ----------------
 	const int32 Drive = Setup.Drive;
@@ -231,6 +238,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	float Te = EngineTorque(Rpm) * thr * (1.f + 0.5f * Setup.Turbo * TurboSpool) * (bBoost ? 1.15f : 1.f);
 	if (Rpm > Sp.Redline) Te *= FMath::Clamp(1.f - (Rpm - Sp.Redline) / 300.f, 0.f, 1.f);
 	if (ShiftT > 0.f) Te *= 0.3f;
+	Te *= 1.f - 0.45f * FMath::Clamp(Damage[0], 0.f, 1.f);   // radiador / admisión dañados
 	// control de tracción: si alguna rueda motriz patina más allá del pico, se recorta el par del motor
 	{
 		float Worst = 0.f;
@@ -246,7 +254,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	{ Te = -(0.06f * Sp.TPeak + 0.08f * Sp.TPeak * FMath::Abs(ShaftRpm) / Sp.Redline) * FMath::Sign(ShaftRpm) * (bStalled ? 0.3f : 1.f); TM = 1.f; }
 	const float WheelTorque = Te * TM * Ratio * 0.9f;
 	float Share[4];
-	for (int32 i = 0; i < 4; ++i) Share[i] = !Driven[i] ? 0.f : (Drive == 0 ? (i < 2 ? 0.225f : 0.275f) : 0.5f);
+	for (int32 i = 0; i < 4; ++i) Share[i] = !Driven[i] ? 0.f : (Drive == 0 ? (i < 2 ? H.Split * 0.5f : (1.f - H.Split) * 0.5f) : 0.5f);
 
 	// ---------------- contacto de ruedas (fase 1: suspensión) ----------------
 	const float zA = Sp.R + 0.55f * Sp.RestLen;
@@ -256,7 +264,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	for (int32 i = 0; i < 4; ++i)
 	{
 		const FVector WP = WheelPos(i) / 100.0;
-		const FVector r = Q.RotateVector(FVector(WP.X, WP.Y, zA - ZCom / 100.f));
+		const FVector r = Q.RotateVector(FVector(WP.X - ComX, WP.Y, zA - ZCom / 100.f));
 		const FVector a = P + r;
 		const FVector Start = a * 100.0 + UpB * 60.0, End = Start - UpB * ((Sp.RestLen + Sp.R) * 100.0 + 160.0);
 		FHitResult Hit;
@@ -274,8 +282,9 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		c.Comp = Sp.RestLen - L;
 		const FVector vp = Vel + FVector::CrossProduct(AngVel, c.Rc);
 		const float vn = FVector::DotProduct(vp, n);
-		float fs = Sp.SpringK * c.Comp - Sp.SpringC * vn;
-		if (L < 0.1f) fs += 6.f * Sp.SpringK * (0.1f - L);
+		const float KMul = 2.f * (i < 2 ? H.FrontW : 1.f - H.FrontW);   // muelles tarados para la carga de cada eje
+		float fs = Sp.SpringK * KMul * c.Comp - Sp.SpringC * FMath::Sqrt(KMul) * vn;
+		if (L < 0.1f) fs += 6.f * Sp.SpringK * KMul * (0.1f - L);
 		c.Fs = fs;
 		c.bWater = bInWater && WaterZ > c.Hit.Z + 0.05f;
 	}
@@ -299,7 +308,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		{
 			const float N = FMath::Max(c.Fs, 0.f);
 			FVector wf = Fwd;
-			if (i < 2) wf = Q.RotateVector(FVector(FMath::Cos(SteerAngle), -FMath::Sin(SteerAngle), 0));
+			if (i < 2) wf = Q.RotateVector(FVector(FMath::Cos(SteerAngle + SteerPull), -FMath::Sin(SteerAngle + SteerPull), 0));
 			wf = (wf - c.N * FVector::DotProduct(wf, c.N)).GetSafeNormal();
 			c.Wf = wf; c.Lat = FVector::CrossProduct(c.N, wf);
 			const FVector vp = Vel + FVector::CrossProduct(AngVel, c.Rc);
@@ -307,8 +316,15 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 			const float Soft = c.G.W[SMud] + c.G.W[SSand] + c.G.W[SSnow];
 			float Mu = c.G.Mu * FMath::Lerp(1.f, widthFactor, Soft) * (1.f - 0.08f * FMath::Clamp(N / Nnom - 1.f, -0.5f, 2.f)) * (1.f - 0.12f * WetTyres);
 			float Crr = c.G.Crr;
-			if (c.bWater) { Mu *= 0.85f; Crr += 0.03f; }
-			c.T = { FMath::Max(Mu, 0.04f), c.G.PeakSlip, c.G.PeakAlpha, c.G.Falloff };
+			if (c.bWater) { Mu *= 0.85f; Crr += 0.03f; if (FMath::Abs(c.Vl) > 8.f) Mu *= 0.6f; }
+			// aquaplaning: lámina de agua en llano empapado a partir de ~50 km/h (el balón flota antes, el de barro evacua mejor)
+			{
+				static const float AquaTire[5] = { 1.f, 0.8f, 0.6f, 0.9f, 1.3f };
+				const float Film = Smooth(0.6f, 0.95f, c.G.Wet) * Smooth(0.96f, 0.995f, (float)c.N.Z) * FMath::Clamp(0.3f + c.G.W[SMud] + c.G.W[SDirt] + c.G.W[SGrass], 0.f, 1.f);
+				const float Aqua = Film * Smooth(13.f, 25.f, FMath::Abs(c.Vl)) * AquaTire[FMath::Clamp(Setup.TireType, 0, 4)];
+				Mu *= 1.f - 0.6f * FMath::Clamp(Aqua, 0.f, 1.f);
+			}
+			c.T = { FMath::Max(Mu, 0.04f), c.G.PeakSlip, c.G.PeakAlpha * H.TyreAlpha, c.G.Falloff };
 			// hundimiento: presión (carga / huella) y patinaje que excava; al rodar limpio el neumático sale hacia arriba
 			const float Press = FMath::Sqrt(FMath::Max(N, 0.f) / Nnom) * FMath::Lerp(1.f, sinkWidth, Soft) * FMath::Sqrt(0.40f / Sp.R);
 			const float Target = c.G.Sink * Press;
@@ -336,14 +352,29 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	// acoplamientos del diferencial: abierto con un poco de viscosidad, o bloqueado (casi rígido)
 	auto Couple = [&](int32 a, int32 b, float k) { Am[a][a] += k; Am[b][b] += k; Am[a][b] -= k; Am[b][a] -= k; };
 	const float KLock = 6000.f;
-	if (Drive == 0 || Drive == 2) Couple(0, 1, bDiffLock ? KLock : 15.f);
-	if (Drive == 0 || Drive == 1) Couple(2, 3, bDiffLock ? KLock : 15.f);
-	if (Drive == 0) { Couple(0, 2, bDiffLock ? KLock * 0.5f : 60.f); Couple(1, 3, bDiffLock ? KLock * 0.5f : 60.f); }
+	if (Drive == 0 || Drive == 2) Couple(0, 1, bDiffLock ? KLock : FMath::Min(H.AxleK, 60.f));   // delante nunca autoblocante fuerte
+	if (Drive == 0 || Drive == 1) Couple(2, 3, bDiffLock ? KLock : H.AxleK);
+	if (Drive == 0) { const float Kc = (bDiffLock || H.CenterK < 0.f) ? KLock * 0.5f : H.CenterK; Couple(0, 2, Kc); Couple(1, 3, Kc); }   // 4x4 conectable = central rígido
 	if (!Solve4(Am, Bv, Xw)) for (int32 i = 0; i < 4; ++i) Xw[i] = Wh[i].Omega;
+	// control de estabilidad: compara la guiñada real con la que pide el volante y frena una rueda para corregir
+	float EscB[4] = {}; bEscActive = false;
+	if (bTc && H.bEsc && FMath::Abs(vLong) > 5.f && !bHandbrake)
+	{
+		const float WB = (FrontX() - RearX()) / 100.f;
+		const float RMax = 0.85f * Gr / FMath::Abs(vLong);
+		const float RRef = FMath::Clamp(-vLong * FMath::Tan(SteerAngle) / WB, -RMax, RMax);
+		const float RAct = FVector::DotProduct(AngVel, UpB);
+		const float Err = RAct - RRef;
+		const bool bOver = FMath::Abs(RAct) > FMath::Abs(RRef) + 0.12f && RAct * RRef >= 0.f, bUnder = FMath::Abs(RAct) < FMath::Abs(RRef) - 0.18f;
+		const float TurnSign = FMath::Abs(RRef) > 0.02f ? FMath::Sign(RRef) : FMath::Sign(RAct);   // >0: gira a la derecha
+		if (bOver) { const int32 Outer = TurnSign > 0.f ? 0 : 1; EscB[Outer] = FMath::Clamp(FMath::Abs(Err) * 0.8f, 0.f, 0.5f); bEscActive = true; }
+		else if (bUnder) { const int32 Inner = TurnSign > 0.f ? 3 : 2; EscB[Inner] = FMath::Clamp(FMath::Abs(Err) * 0.6f, 0.f, 0.35f); bEscActive = true; }
+		if (bEscActive) TcCut = FMath::Max(0.4f, TcCut - dt * 2.f);
+	}
 	// frenos (con ABS opcional) y freno de mano: par de rozamiento que puede llegar a bloquear la rueda
 	for (int32 i = 0; i < 4; ++i)
 	{
-		float Tb = brake * Sp.BrakeT * (i < 2 ? 0.32f : 0.18f);
+		float Tb = brake * Sp.BrakeT * (i < 2 ? 0.32f : 0.18f) + EscB[i] * Sp.BrakeT * 0.3f;
 		// ABS: el par de freno no pasa de lo que el neumático puede transmitir (la rueda sigue girando cerca del pico)
 		if (bAbs && brake > 0.f && Cw[i].C && FMath::Abs(Cw[i].Vl) > 1.5f)
 		{
@@ -374,7 +405,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		// la fuerza vertical y la longitudinal actúan en la huella; la lateral entra por los brazos del eje a la altura del
 		// centro de balanceo (eje rígido: ~35 % de la altura del centro de masas), que es lo que limita el balanceo real
 		const FVector Fv = c.N * N + c.Wf * Fx, Fl = c.Lat * Fy;
-		F += Fv + Fl; T += FVector::CrossProduct(c.Rc, Fv) + FVector::CrossProduct(c.Rc + UpB * (ZCom / 100.f) * 0.35f, Fl);
+		F += Fv + Fl; T += FVector::CrossProduct(c.Rc, Fv) + FVector::CrossProduct(c.Rc + UpB * (ZCom / 100.f) * H.Rc, Fl);
 		if (N > bestLoad) { bestLoad = N; bestW = i; }
 	}
 	for (int32 i = 0; i < 4; ++i) Wh[i].Spin += Wh[i].Omega * dt;
@@ -388,13 +419,13 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		FCollisionQueryParams BP(SCENE_QUERY_STAT(DustlineBody), false, this);
 		for (int32 k = 0; k < 11; ++k)
 		{
-			const FVector Lp(PX[k] * Sp.BodyL, PY[k] * Sp.BodyW, Top[k] ? Sp.BodyTop : Sp.BodyBot);
+			const FVector Lp(PX[k] * Sp.BodyL - ComX, PY[k] * Sp.BodyW, Top[k] ? Sp.BodyTop : Sp.BodyBot);
 			const FVector Wp = P + Q.RotateVector(Lp);
 			if ((SubStep & 1) == 0)
 			{
-				FHitResult H; BodyPlane[k] = false;
+				FHitResult BH; BodyPlane[k] = false;
 				const FVector Dir = (Wp - P).GetSafeNormal();
-				if (GetWorld()->LineTraceSingleByChannel(H, P * 100.0, Wp * 100.0 + Dir * 30.0, ECC_Visibility, BP)) { BodyPlane[k] = true; BodyPlaneP[k] = H.ImpactPoint / 100.0; BodyPlaneN[k] = H.ImpactNormal; }
+				if (GetWorld()->LineTraceSingleByChannel(BH, P * 100.0, Wp * 100.0 + Dir * 30.0, ECC_Visibility, BP)) { BodyPlane[k] = true; BodyPlaneP[k] = BH.ImpactPoint / 100.0; BodyPlaneN[k] = BH.ImpactNormal; }
 			}
 			if (!BodyPlane[k]) continue;
 			const float d = FVector::DotProduct(BodyPlaneP[k] - Wp, BodyPlaneN[k]);
@@ -417,7 +448,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		const float CL = Sp.BodyL / 3.f, CW = Sp.BodyW / 2.f, HBody = Sp.BodyTop - Sp.BodyBot;
 		for (int32 ix = 0; ix < 3; ++ix) for (int32 iy = 0; iy < 2; ++iy)
 		{
-			const FVector Lp((ix - 1) * CL, (iy - 0.5f) * CW, Sp.BodyBot);
+			const FVector Lp((ix - 1) * CL - ComX, (iy - 0.5f) * CW, Sp.BodyBot);
 			const FVector Wb = P + Q.RotateVector(Lp);
 			const float h = FMath::Clamp(WaterZ - (float)Wb.Z, 0.f, HBody);
 			if (h <= 0.f) continue;
@@ -448,7 +479,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		const float Sill = Sp.BodyBot + 0.35f;
 		const float OverSill = WaterZ - (float)(P + Q.RotateVector(FVector(0, 0, Sill))).Z;
 		if (OverSill > 0.f) Flood = FMath::Min(1.f, Flood + dt * 0.012f * FMath::Clamp(OverSill / 0.5f, 0.f, 1.f));
-		const float IntakeWZ = (float)(P + Q.RotateVector(FVector(0.3f * Sp.BodyL, 0.f, Sp.IntakeZ))).Z;
+		const float IntakeWZ = (float)(P + Q.RotateVector(FVector(0.3f * Sp.BodyL - ComX, 0.f, Sp.IntakeZ))).Z;
 		if (WaterZ > IntakeWZ && !bStalled) { bStalled = true; UE_LOG(LogDustlineDrive, Display, TEXT("DRIVE motor ahogado (agua %.2f > toma %.2f)"), WaterZ, IntakeWZ); }
 		if (WaterZ < IntakeWZ) StallT += dt; else StallT = 0.f;
 		WetTyres = 1.f;
@@ -473,10 +504,54 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	else SurfaceName = bestW >= 0 ? (Wh[bestW].Surf < 0 ? TEXT("Vado") : SurfName(Wh[bestW].Surf)) : TEXT("En el aire");
 	FHitResult Blocked;
 	SetActorLocationAndRotation(P * 100.0, Q, true, &Blocked, ETeleportType::None);
+	// el suelo lo llevan las ruedas y los puntos de la carrocería: si el barrido toca el terreno, se completa el movimiento sin choque
+	if (Blocked.bBlockingHit && ((Blocked.GetComponent() && Blocked.GetComponent()->IsA<ULandscapeHeightfieldCollisionComponent>()) || Blocked.ImpactNormal.Z > 0.65f))
+	{
+		SetActorLocationAndRotation(P * 100.0, Q, false, nullptr, ETeleportType::None);
+		Blocked = FHitResult();
+	}
+	if (Blocked.bBlockingHit && FParse::Param(FCommandLine::Get(), TEXT("phystest")))
+	{
+		static double LastB = 0.0; const double Nw = GetWorld()->GetTimeSeconds();
+		if (Nw - LastB > 1.0) { LastB = Nw; UE_LOG(LogDustlineDrive, Display, TEXT("PTBLOCK %s / %s n=%s"), Blocked.GetActor() ? *Blocked.GetActor()->GetName() : TEXT("-"), Blocked.GetComponent() ? *Blocked.GetComponent()->GetName() : TEXT("-"), *Blocked.ImpactNormal.ToString()); }
+	}
 	if (Blocked.bBlockingHit)
 	{
-		const FVector n = Blocked.ImpactNormal; const float vn = FVector::DotProduct(Vel, n);
-		if (vn < 0) { Vel -= n * vn * 1.15f; Vel *= 0.92f; AngVel *= 0.8f; }
+		// choque como impulso en el punto de contacto: el coche rebota poco, gira si golpea con una esquina y se raspa
+		const FVector n = Blocked.ImpactNormal;
+		const FVector Pc = GetActorLocation() / 100.0, rc = Blocked.ImpactPoint / 100.0 - Pc;
+		const FQuat Qc = GetActorQuat();
+		auto InvI = [&](const FVector& W) { FVector l = Qc.UnrotateVector(W); l = FVector(l.X / Sp.Inertia[2], l.Y / Sp.Inertia[0], l.Z / Sp.Inertia[1]); return Qc.RotateVector(l); };
+		const FVector vp = Vel + FVector::CrossProduct(AngVel, rc);
+		const float vn = FVector::DotProduct(vp, n);
+		if (vn < 0.f)
+		{
+			const float e = vn < -4.f ? 0.12f : 0.25f;
+			const float Kn = 1.f / (float)mass + FVector::DotProduct(n, FVector::CrossProduct(InvI(FVector::CrossProduct(rc, n)), rc));
+			const float Jn = -(1.f + e) * vn / Kn;
+			Vel += n * (Jn / (float)mass); AngVel += InvI(FVector::CrossProduct(rc, n * Jn)).GetClampedToMaxSize(2.5f);
+			FVector vt = vp - n * vn;
+			if (vt.SizeSquared() > 1e-4f)
+			{
+				const FVector t = vt.GetSafeNormal();
+				const float Kt = 1.f / (float)mass + FVector::DotProduct(t, FVector::CrossProduct(InvI(FVector::CrossProduct(rc, t)), rc));
+				const float Jt = FMath::Min((float)vt.Size() / Kt, 0.5f * Jn);
+				Vel -= t * (Jt / (float)mass); AngVel -= InvI(FVector::CrossProduct(rc, t * Jt));
+			}
+			const float Dv = Jn / (float)mass;   // cambio de velocidad del golpe (m/s)
+			if (Dv > 2.5f)
+			{
+				const FVector Nl = Qc.UnrotateVector(-n);
+				const int32 Zone = FMath::Abs(Nl.X) > FMath::Abs(Nl.Y) ? (Nl.X > 0.f ? 0 : 1) : (Nl.Y < 0.f ? 2 : 3);
+				const float Hit = FMath::Clamp((Dv - 2.5f) / 22.f, 0.f, 1.f);
+				Damage[Zone] = FMath::Min(1.f, Damage[Zone] + Hit);
+				if (Zone == 0 || Zone >= 2) SteerPull = FMath::Clamp(SteerPull + Hit * 0.05f * (Zone == 2 ? -1.f : (Zone == 3 ? 1.f : (FMath::RandBool() ? 1.f : -1.f))), -0.08f, 0.08f);
+				if (Dv > 12.f && Zone == 0) { bStalled = true; StallT = 0.f; }
+				UE_LOG(LogDustlineDrive, Display, TEXT("DRIVE choque dv=%.1f m/s zona=%d daños=%.2f/%.2f/%.2f/%.2f"), Dv, Zone, Damage[0], Damage[1], Damage[2], Damage[3]);
+			}
+			ImpactSnd = FMath::Max(ImpactSnd, FMath::Clamp(Dv / 10.f, 0.f, 1.f));
+			CamShake = FMath::Max(CamShake, FMath::Clamp(Dv / 8.f, 0.f, 1.f));
+		}
 	}
 }
 
@@ -507,6 +582,7 @@ void ADustlineCar::UpdateCamera(float dt)
 	FHitResult H; if (GetWorld()->LineTraceSingleByChannel(H, Loc + FVector(0, 0, 150), CamPos, ECC_Visibility)) CamPos = H.ImpactPoint + (Loc - CamPos).GetSafeNormal() * 30.f;
 	// no meter la cámara bajo el agua
 	{ float Lv; FVector2D Fl; if (WaterAt(CamPos.X, CamPos.Y, Lv, Fl) && Lv > CamPos.Z - 40.f) CamPos.Z = Lv + 40.f; }
+	if (CamShake > 0.01f) { CamPos += FVector(FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-1.f, 1.f)) * CamShake * 18.f; CamShake *= FMath::Exp(-dt * 6.f); }
 	Cam->SetWorldLocationAndRotation(CamPos, (Loc + FVector(0, 0, 40) - CamPos).Rotation());
 }
 
@@ -533,7 +609,7 @@ void ADustlineCar::Tick(float DeltaTime)
 		else if (T < 18.f) { Throttle = 1.f; Steer = -0.4f; }
 		else Throttle = -1.f;
 		static float PT = 0.f; PT += dt;
-		if (PT > 0.5f) { PT = 0.f; UE_LOG(LogDustlineDrive, Display, TEXT("PT t=%.1f v=%.0f gear=%d rpm=%.0f up=%.2f roll=%.1f surf=%s slipF=%.2f slipR=%.2f grounded=%d%d%d%d"), T, SpeedKmh, Gear, Rpm, GetActorUpVector().Z,
+		if (PT > 0.5f) { PT = 0.f; UE_LOG(LogDustlineDrive, Display, TEXT("PT t=%.1f v=%.0f ay=%.2f esc=%d gear=%d rpm=%.0f up=%.2f roll=%.1f surf=%s slipF=%.2f slipR=%.2f grounded=%d%d%d%d"), T, SpeedKmh, FMath::Abs(AngVel.Z) * Vel.Size() / 9.81f, bEscActive ? 1 : 0, Gear, Rpm, GetActorUpVector().Z,
 			GetActorRotation().Roll, *SurfaceName, Wh[0].Slip, Wh[2].Slip, Wh[0].Contact, Wh[1].Contact, Wh[2].Contact, Wh[3].Contact); }
 		if (T > 22.f) FPlatformMisc::RequestExit(false);
 	}

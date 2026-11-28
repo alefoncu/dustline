@@ -29,6 +29,19 @@ static const FDustlineModel GModels[] = {
 	{ TEXT("Rock Crawler"),     6, 390, 190, 190, 250, 1500, 3500, 0.0f, 0.62f, 0.400f, 0.90f, 0.7f, 2, 0, { FLinearColor(0.70f,0.05f,0.01f), FLinearColor(0.70f,0.60f,0.02f), FLinearColor(0.05f,0.05f,0.06f) } },
 };
 
+// Carácter de conducción por estilo (0 Clase G, 2 Panda, 3 Defender, 4 Buggy, 5 Pick-up, 6 Crawler)
+//                                    FrontW SteerMax Rate  Sens    Damp  Arb   Rc     Split CenterK AxleK  Lock   Alpha Brake YawI  Esc
+static const ADustlineCar::FHandling GHand[7] = {
+	/* 0 Clase G: pesado, estable, 4Matic 40/60, frenos fuertes */ { 0.52f, 0.60f, 6.0f, 0.045f, 0.42f, 0.55f, 0.35f, 0.40f, 60.f,  30.f,  false, 1.00f, 1.05f, 1.10f, true },
+	/* 1 (sin uso) */                                               { 0.50f, 0.60f, 6.0f, 0.045f, 0.40f, 0.50f, 0.35f, 0.50f, 40.f,  20.f,  false, 1.00f, 1.00f, 1.00f, true },
+	/* 2 Panda 4x4: ligero, ágil, morro pesado, viscoacoplador */  { 0.60f, 0.66f, 8.0f, 0.040f, 0.36f, 0.45f, 0.20f, 0.70f, 25.f,  12.f,  false, 0.92f, 0.90f, 0.90f, false },
+	/* 3 Defender clásico: blando, lento de dirección, balancea */ { 0.50f, 0.55f, 4.5f, 0.050f, 0.30f, 0.32f, 0.42f, 0.50f, 20.f,  8.f,   false, 1.12f, 0.82f, 1.20f, false },
+	/* 4 Buggy: motor detrás, nervioso, autoblocante trasero */    { 0.40f, 0.68f, 9.5f, 0.035f, 0.50f, 0.70f, 0.25f, 0.30f, 40.f,  90.f,  false, 0.88f, 1.10f, 0.85f, false },
+	/* 5 Pick-up: caja vacía (detrás ligero), 4x4 conectable */    { 0.58f, 0.56f, 5.0f, 0.050f, 0.38f, 0.45f, 0.40f, 0.50f, -1.f,  15.f,  false, 1.05f, 0.92f, 1.35f, true },
+	/* 6 Rock Crawler: bloqueos de serie, lento y muy articulado */ { 0.50f, 0.72f, 4.0f, 0.060f, 0.55f, 0.35f, 0.40f, 0.50f, -1.f,  40.f,  false, 1.10f, 1.00f, 1.00f, false },
+};
+const ADustlineCar::FHandling& ADustlineCar::HandlingFor(int32 Style) { return GHand[FMath::Clamp(Style, 0, 6)]; }
+
 const FDustlineModel& ADustlineCar::GetModel(int32 I) { return GModels[FMath::Clamp(I, 0, UE_ARRAY_COUNT(GModels) - 1)]; }
 int32 ADustlineCar::NumModels() { return UE_ARRAY_COUNT(GModels); }
 FString ADustlineCar::ModelName(int32 I) { return GetModel(I).Name; }
@@ -152,7 +165,8 @@ void ADustlineCar::Rebuild()
 		const float gc = GroundClearance();
 		// centro de masas realista (bajo: chasis, motor y ejes) en vez del centro geométrico de la carrocería
 		ZCom = gc + 0.31f * (BodyH() - gc);
-		Visual->SetRelativeLocation(FVector(0, 0, -ZCom));
+		ComX = (HandlingFor(M.Style).FrontW - 0.5f) * (FrontX() - RearX()) / 100.f;   // centro de masas desplazado hacia el lado pesado
+		Visual->SetRelativeLocation(FVector(-ComX * 100.f, 0, -ZCom));
 		// la caja de barrido (árboles/rocas) cubre la parte media; el suelo lo tocan los puntos de contacto de la carrocería
 		Collision->SetBoxExtent(FVector(M.L * 0.46f, M.W * 0.47f, FMath::Clamp((ZCom - gc) * 0.75f, 18.f, (BodyH() - gc) * 0.45f)));
 		ComputeSpec();

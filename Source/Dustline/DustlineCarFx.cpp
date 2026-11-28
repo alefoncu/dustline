@@ -217,6 +217,7 @@ void ADustlineCar::UpdateSound(float Dt)
 	const FVector L = GetActorLocation(); const FLocal Wx = WeatherAt(L.X, L.Y);
 	P.Rain = Wx.Rain + 0.5f * Wx.Snowfall * 0.f; P.Wind = Wx.Wind.Size();
 	if (PrevThr > 0.6f && LastThr < 0.1f && TurboSpool > 0.5f && Setup.Turbo > 0.2f) P.BlowOff = 1.f;
+	P.Impact = ImpactSnd; ImpactSnd = 0.f;
 	P.Volume = S.Volume / 100.f * (bPaused ? 0.25f : 1.f) * ((bGarage || bShowcase) ? 0.6f : 1.f);
 	if (Synth) Synth->SetParams(P);
 	if (DumpGen.IsValid())

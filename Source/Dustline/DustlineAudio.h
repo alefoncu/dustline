@@ -15,6 +15,7 @@ struct FDustlineSoundParams
 	float Rain = 0.f, Wind = 0.f;
 	float Volume = 0.8f;
 	float BlowOff = 0.f;      // soltar gas con el turbo cargado
+	float Impact = 0.f;       // golpe (se consume en el audio)
 };
 
 /** Generador de sonido puro (sin UObjects): se usa en tiempo real y para renderizar pruebas a WAV. */
@@ -27,6 +28,7 @@ private:
 	float SR = 48000.f;
 	double Phase = 0.0, CrankPhase = 0.0, TurboPhase = 0.0, SqPhase = 0.0, Time = 0.0;
 	float LpEngine = 0.f, LpRoll = 0.f, LpMud = 0.f, BpSnowA = 0.f, BpSnowB = 0.f, LpRain = 0.f, LpWind = 0.f, LpWade = 0.f, LpSq = 0.f, HpClat = 0.f, HpPrev = 0.f;
+	float Thud = 0.f, Ring = 0.f; double RingPhase = 0.0; float LpThud = 0.f;
 	float Splash = 0.f, Blow = 0.f, Crackle = 0.f, Clatter = 0.f, Patter = 0.f;
 	float Smooth[16] = {};   // parámetros suavizados (sin chasquidos)
 	uint32 Rng = 22222u;

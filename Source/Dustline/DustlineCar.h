@@ -78,6 +78,25 @@ public:
 	float Flood = 0.f;           // 0..1 agua dentro del habitáculo
 	float WetTyres = 0.f;        // neumáticos mojados tras vadear
 	FString WeatherLabel; float TempC = 12.f;
+	// ---- carácter de cada modelo ----
+	struct FHandling
+	{
+		float FrontW;     // reparto de peso delante
+		float SteerMax, SteerRate, SteerSens;   // ángulo máximo (rad), rapidez del volante, cuánto se cierra con la velocidad
+		float Damp, Arb, Rc;                    // amortiguación (ζ), barras estabilizadoras, centro de balanceo (fracción de la altura del CdM)
+		float Split, CenterK, AxleK;            // reparto delante en 4x4, viscosidad del central (-1 = rígido, 4x4 conectable), autoblocante de ejes
+		bool bLockers;                          // bloqueos conectados de serie
+		float TyreAlpha, Brake, YawI;           // neumático perezoso (>1) o incisivo (<1), frenos, inercia de guiñada
+		bool bEsc;                              // trae control de estabilidad
+	};
+	static const FHandling& HandlingFor(int32 Style);
+	const FHandling& Hd() const { return HandlingFor(GetModel(Setup.Model).Style); }
+	// ---- choques, daños y ayudas ----
+	float Damage[4] = {};        // delante, detrás, izquierda, derecha (0..1)
+	float SteerPull = 0.f, CamShake = 0.f, ImpactSnd = 0.f;
+	bool bHdcActive = false, bEscActive = false;
+	float DamageTotal() const { return FMath::Clamp((Damage[0] + Damage[1] + Damage[2] + Damage[3]) * 0.5f, 0.f, 1.f); }
+	void Repair() { for (float& D : Damage) D = 0.f; SteerPull = 0.f; }
 	float MaxSinkM() const { float S = 0.f; for (int32 i = 0; i < 4; ++i) S = FMath::Max(S, Wh[i].Sink); return S; }
 	// ---- garage / menús ----
 	UFUNCTION(BlueprintCallable, Category = "Dustline") void ToggleGarage();
@@ -104,7 +123,7 @@ private:
 	TFunction<void()> OnGarageClosed; bool bMenuStarted = false;
 	// physics state (SI units; position of the centre of mass in cm)
 	FVector Vel = FVector::ZeroVector, AngVel = FVector::ZeroVector;
-	float ZCom = 100.f, SteerAngle = 0.f, TurboSpool = 0.f, CamYaw = 0.f, Clock = 0.f, Accum = 0.f;
+	float ZCom = 100.f, ComX = 0.f, SteerAngle = 0.f, TurboSpool = 0.f, CamYaw = 0.f, Clock = 0.f, Accum = 0.f;
 	int32 CamMode = 0;
 	struct FWheelPhys { FVector CP = FVector::ZeroVector, CN = FVector::UpVector; float WMud = 0, WSnow = 0, WSand = 0, WGrav = 0, WGrass = 0, WTall = 0, WDirt = 0, WRock = 0, Wet = 0, SlipA = 0; bool bWater = false; float Length = 0.5f; float Spin = 0.f; bool Contact = false; float Omega = 0.f, Sink = 0.f, Slip = 0.f, Peak = 0.15f, Load = 0.f, Comp = 0.f; int32 Surf = 0; };
 	FWheelPhys Wh[4];
