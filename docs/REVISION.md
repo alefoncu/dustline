@@ -106,7 +106,7 @@ Medido sobre el juego (`-mapstats`):
 - Cifras que cambian al momento (potencia, peso, velocidad, altura libre).
 
 **Fallos:**
-1. Las carrocerías son *low-poly* (Kenney): bloques sin detalle al lado de un terreno con texturas PBR. Es la mayor distancia de estilo del juego. *(Necesita modelos nuevos: no se puede resolver solo con código.)*
+1. Las carrocerías se ven planas y limpias al lado de un terreno con texturas PBR: no se manchan nunca y no hay equipamiento todoterreno. *(Corrección posterior: en esta revisión escribí que eran modelos Kenney. No es así: el juego usa las carrocerías procedurales propias con cotas reales. Kenney está desactivado desde noviembre.)*
 2. El taller deja combinaciones absurdas sin avisar (un motor de 7 L con turbo 3 da 1.001 CV en un Clase G). No hay coste ni límite, así que no hay decisiones.
 3. La lista de piezas se corta por abajo ("V8 todoterreno" queda a medias). Se puede desplazar, pero no se nota.
 4. Pintura oscura de serie en casi todos: el coche se pierde contra el terreno en sombra y bajo la lluvia.
@@ -157,9 +157,9 @@ Ordenado por impacto. ✅ = se hace en esta tanda; ⏸ = necesita una decisión 
 | 10 | Taller: avisar que la lista sigue (degradado y barra) | UI | ✅ |
 | 11 | Pantalla de controles con el mando | UI | ✅ |
 | 12 | Pintura de serie más visible | Coches | ✅ |
-| 13 | Carrocerías detalladas en lugar de Kenney | Coches | ⏸ hacen falta modelos 3D (comprar o encargar, con licencia) |
-| 14 | Coste o presupuesto en el taller (economía y progresión) | Juego | ⏸ decisión de diseño tuya: ¿modo libre o carrera? |
-| 15 | Variación de color del suelo y rocas con mejor textura | Arte | ⏸ siguiente tanda (texturas nuevas CC0) |
+| 13 | Carrocerías con más vida: barro y equipamiento | Coches | ✅ (segunda tanda) |
+| 14 | Economía del taller: modo carrera con créditos y modo libre | Juego | ✅ (segunda tanda) |
+| 15 | Variación de color del suelo y rocas sin textura estirada | Arte | ✅ (segunda tanda) |
 
 *El resultado de cada punto se anota abajo al terminar.*
 
@@ -181,7 +181,7 @@ Ordenado por impacto. ✅ = se hace en esta tanda; ⏸ = necesita una decisión 
 | 10 | Taller: barra de desplazamiento | ✅ |
 | 11 | Controles con mando | ✅ Sección «Mando» en Ajustes → Controles y en el README. |
 | 12 | Pintura visible | ✅ Clase G caqui, Defender verde más claro y Pick-up azul más vivo. |
-| 13–15 | Carrocerías detalladas, economía del taller, texturas de suelo y rocas | ⏸ Necesitan recursos o decisiones tuyas (ver plan). |
+| 13–15 | Carrocerías, economía, texturas | ✅ En la segunda tanda (abajo). |
 
 **Verificación de las pistas (punto 2):**
 - Midiéndolas sobre el terreno real del juego, el 95 % de cada pista está a ≤ 18-20 % de rampa.
@@ -202,3 +202,26 @@ Ordenado por impacto. ✅ = se hace en esta tanda; ⏸ = necesita una decisión 
 - la sensación del mando;
 - el follaje de cerca;
 - y si la red de pistas es divertida de conducir, que solo se puede juzgar jugando.
+
+## Segunda tanda (puntos 13-15)
+
+*28 nov 2026. Capturas: `segunda_equipo_barro.jpg`, `segunda_taller.jpg` y `segunda_rocas.jpg`.*
+
+**Hallazgo nuevo e importante: la vegetación salía con el material por defecto.**
+- **Causa:** a los materiales de árboles, arbustos y rocas les faltaba el uso «Instanced Static Meshes», y el juego los dibuja como instancias. Unreal los cambiaba por el material gris por defecto. De ahí el aspecto de «cartón gris» que anoté en la revisión; el tinte verde del punto 7 no llegaba a verse.
+- **Arreglo:** uso activado en los dos materiales base. Ahora los abetos se ven verdes y las rocas con su textura. El log ya no da ningún aviso de material.
+
+| # | Tarea | Resultado |
+|---|---|---|
+| 13 | Coches | ✅ **Barro:** se acumula en la carrocería según el suelo, lo mojado, la velocidad y el patinaje. Sube más cuanto más salpica, el agua de un vado lo lava y el taller deja el coche limpio. Las ruedas se embarran del todo y los cristales y las luces, menos. ✅ **Equipo nuevo en el taller:** snorkel (Clase G, Panda y Pick-up), que sube la toma de aire al techo y deja vadear más hondo; y baca de expedición con bidones, rueda de repuesto, caja y barra de luz (+45 kg, más resistencia al aire y el centro de masas 3 cm más alto). ✅ El Defender ya traía snorkel dibujado pero la física no lo usaba: ahora sí. |
+| 14 | Economía | ✅ **Modo carrera** (de serie, se puede quitar en Ajustes → Juego): empiezas con 4.000 cr, ganas 1.500 cr por cada lugar descubierto y 1 cr cada 4 m recorridos con las ruedas en el suelo. Cada pieza tiene precio (de 500 a 13.900 cr). La pieza de serie es gratis y lo comprado se queda tuyo por modelo, así que volver a montarlo no cuesta. Si no llega el dinero, la tarjeta dice cuánto falta. El saldo se ve en el taller y en el HUD, y hay un botón «Empezar de cero». ✅ **Modo libre:** todo gratis, como antes. |
+| 15 | Texturas | ✅ **Roca de las laderas con proyección triplanar:** se acabaron las vetas estiradas en los cortados. ✅ **Variación a gran escala:** praderas secas y otras más verdes, manchas cálidas y frías de unos 100 m, y brillo variable de unos 600 m. ✅ **Repetición rota:** la mezcla de dos escalas de cada textura cambia por zonas de ~30 m. ✅ **Rocas grandes:** detalle de roca proyectado en el mundo, para que la textura de 1k no se vea estirada al escalarlas. Rendimiento medido igual que antes (27-33 fps). |
+
+**Verificación:**
+- **Prueba automática del modo carrera:** 8 de 8 comprobaciones bien. Se rechaza la compra sin dinero, se compra con él, se vuelve gratis a la pieza original y a la ya comprada, 1 km da 250 cr y en modo libre no se cobra.
+- **Barro, con el piloto automático en la pista 1 bajo la lluvia:** pasa de 0,05 a 0,83 en 75 s a 22 km/h, salpicado hasta 67 cm. En el mismo tramo se ganan 114 cr.
+
+**Sigue pendiente:**
+- la pista 2;
+- la sensación con mando físico;
+- si los precios se sienten justos, que solo se sabe jugando una partida.

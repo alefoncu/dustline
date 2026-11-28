@@ -16,6 +16,7 @@ struct FDustlineSettings
 	UPROPERTY() bool bAbs = true;
 	UPROPERTY() bool bTc = true;           // control de tracción
 	UPROPERTY() float Volume = 80.f;       // % volumen general
+	UPROPERTY() bool bCareer = true;       // modo carrera: las piezas cuestan créditos
 
 	static FDustlineSettings& Get();
 	void Load();

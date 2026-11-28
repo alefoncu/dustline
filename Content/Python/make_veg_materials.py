@@ -40,6 +40,7 @@ def master(name, foliage):
         mel.connect_material_property(a, "R", unreal.MaterialProperty.MP_OPACITY_MASK)
         m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MASKED)
         m.set_editor_property("two_sided", True)
+    m.set_editor_property("used_with_instanced_static_meshes", True)   # el scatter usa instancias: sin esto, material por defecto gris
     mel.recompile_material(m)
     unreal.EditorAssetLibrary.save_loaded_asset(m)
     return m
@@ -109,3 +110,4 @@ for i in IDS:
         print("VM", i, slot, "->", parent.get_name(), "diff" if diff else "-", "nor" if nor else "-", "rough" if rough else "-", "alpha" if alpha else "-")
     unreal.EditorAssetLibrary.save_loaded_asset(mesh)
 print("VM_DONE")
+exec(open("/Volumes/SSD/Dustline-UE/Content/Python/make_rock_detail.py").read())   # detalle triplanar en rocas

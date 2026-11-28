@@ -58,6 +58,8 @@ def noise(pos, scale, seed_off=0.0):
     n.set_editor_property("level_scale", 2.0)
     n.set_editor_property("noise_function", unreal.NoiseFunction.NOISEFUNCTION_GRADIENT_ALU)
     conn(p, "", n, "Position"); return n
+def node_div(a, b):
+    n = node(unreal.MaterialExpressionDivide); conn(a, "", n, "A"); conn(b, "", n, "B"); return n
 def tex(path, uv, normal=False):
     t = unreal.EditorAssetLibrary.load_asset(path)
     n = node(unreal.MaterialExpressionTextureSample)
@@ -96,6 +98,17 @@ def ch(n, c):
 m_dirt, m_mud, m_tall, m_grav = ch(mtex, "r"), ch(mtex, "g"), ch(mtex, "b"), ch(mtex, "a")
 wx_wet, wx_snow, wx_ice = ch(wtex, "r"), ch(wtex, "g"), ch(wtex, "b")
 
+# --- variación a gran escala (barata: textura de ruido de 64x64 del motor muestreada muy grande) ---
+NOISE = "/Engine/EngineMaterials/Good64x64TilingNoiseHighFreq"
+def bignoise(scale_cm, off):
+    t = tex(NOISE, add(mul(xy, None, 1.0 / scale_cm), None, off))
+    return mask(t, r=True)
+nA = bignoise(64.0 * 900.0, 0.13)    # manchas de ~600 m
+nB = bignoise(64.0 * 160.0, 0.71)    # manchas de ~100 m
+nC = bignoise(64.0 * 45.0, 0.29)     # manchas de ~30 m (rompe la repetición de las texturas)
+macro = add(mul(nA, None, 0.6), mul(nB, None, 0.4))         # 0..1
+tile_mix = add(mul(nC, None, 0.55), None, 0.12)            # cuánto pesa la escala grande de cada textura
+
 TILES = {"Grass004": 380.0, "Ground071": 450.0, "Ground106": 450.0, "Ground080": 520.0, "Rock058": 700.0, "Snow014": 450.0}
 layers = {}
 for i, tile in TILES.items():
@@ -103,12 +116,14 @@ for i, tile in TILES.items():
     uv2 = add(mul(xy, None, 1.0 / (tile * 7.3)), None, 0.37)
     c1 = tex("/Game/Terrain/Textures/T_%s_Color" % i, uv)
     c2 = tex("/Game/Terrain/Textures/T_%s_Color" % i, uv2)
-    col = lerp(c1, c2, const(0.35))
+    col = lerp(c1, c2, tile_mix)
     if i == "Rock058":
         rv = node(unreal.MaterialExpressionConstant3Vector); rv.set_editor_property("constant", unreal.LinearColor(0.78, 0.72, 0.64, 1)); col = mul(col, rv)
     if i == "Snow014": col = mul(col, None, 0.85)
     if i == "Grass004":
-        gv = node(unreal.MaterialExpressionConstant3Vector); gv.set_editor_property("constant", unreal.LinearColor(0.60, 0.66, 0.46, 1)); col = mul(col, gv)
+        gv = node(unreal.MaterialExpressionConstant3Vector); gv.set_editor_property("constant", unreal.LinearColor(0.60, 0.66, 0.46, 1))
+        gg = node(unreal.MaterialExpressionConstant3Vector); gg.set_editor_property("constant", unreal.LinearColor(0.42, 0.60, 0.30, 1))
+        col = mul(col, lerp(gv, gg, smooth(macro, 0.35, 0.75)))   # praderas secas y otras más verdes
         # pradera de hierba alta: más pajiza y oscura
         tv = node(unreal.MaterialExpressionConstant3Vector); tv.set_editor_property("constant", unreal.LinearColor(0.80, 0.70, 0.42, 1))
         col = lerp(col, mul(col, tv), mul(m_tall, None, 0.7))
@@ -116,6 +131,23 @@ for i, tile in TILES.items():
         dv = node(unreal.MaterialExpressionConstant3Vector); dv.set_editor_property("constant", unreal.LinearColor(0.72, 0.66, 0.60, 1)); col = mul(col, dv)
     nm = tex("/Game/Terrain/Textures/T_%s_Normal" % i, uv, normal=True)
     ro = mask(tex("/Game/Terrain/Textures/T_%s_Roughness" % i, uv), r=True)
+    if i == "Rock058":
+        # en los cortados la proyección desde arriba estira la textura: se proyecta también desde los lados (triplanar)
+        xz = node(unreal.MaterialExpressionAppendVector); conn(mask(wp, r=True), "", xz, "A"); conn(z, "", xz, "B")
+        yz = node(unreal.MaterialExpressionAppendVector); conn(mask(wp, g=True), "", yz, "A"); conn(z, "", yz, "B")
+        an = node(unreal.MaterialExpressionAbs); conn(vn, "", an, "")
+        a2 = mul(an, an); a4 = mul(a2, a2)
+        wx_, wy_, wz_ = mask(a4, r=True), mask(a4, g=True), mask(a4, b=True)
+        tot = add(add(wx_, wy_), wz_)
+        def tri(path, normal=False, comp=None):
+            sx = tex(path, mul(yz, None, 1.0 / tile), normal); sy = tex(path, mul(xz, None, 1.0 / tile), normal); sz = tex(path, uv, normal)
+            if comp: sx, sy, sz = mask(sx, r=True), mask(sy, r=True), mask(sz, r=True)
+            return node_div(add(add(mul(sx, wx_), mul(sy, wy_)), mul(sz, wz_)), tot)
+        rcol = mul(tri("/Game/Terrain/Textures/T_Rock058_Color"), rv)
+        col = rcol
+        flatn = node(unreal.MaterialExpressionConstant3Vector); flatn.set_editor_property("constant", unreal.LinearColor(0, 0, 1, 1))
+        nm = lerp(flatn, nm, sat(mul(wz_, None, 3.0)))   # el relieve de la normal solo donde la proyección coincide con la del terreno
+        ro = tri("/Game/Terrain/Textures/T_Rock058_Roughness", comp=True)
     layers[i] = (col, nm, ro)
 # grava: la roca a escala pequeña (canto rodado) mezclada con la arena
 uvg = mul(xy, None, 1.0 / 160.0)
@@ -149,6 +181,12 @@ def blend(idx):
     base = lerp(base, layers["Snow014"][idx], a_snow)
     return base
 col = blend(0); nrm = blend(1); rough = blend(2)
+# variación de tono y brillo a gran escala (el suelo deja de ser una alfombra uniforme); la nieve no
+warm = node(unreal.MaterialExpressionConstant3Vector); warm.set_editor_property("constant", unreal.LinearColor(1.08, 1.0, 0.88, 1))
+cool = node(unreal.MaterialExpressionConstant3Vector); cool.set_editor_property("constant", unreal.LinearColor(0.86, 0.92, 0.92, 1))
+vt = lerp(warm, cool, nB)
+vt = mul(vt, add(mul(nA, None, 0.32), None, 0.80))   # 0,80..1,12
+col = lerp(col, mul(col, vt), one_minus(a_snow))
 
 # humedad: suelo más oscuro y brillante; charcos en llano embarrado; hielo liso y vidrioso
 wet_eff = mul(wet, one_minus(a_snow))

@@ -24,6 +24,8 @@ struct FDustlineSetup
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 TireType = 1;          // 0 road,1 AT,2 mud,3 studded,4 balloon
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) int32 Drive = 0;             // 0 awd,1 rwd,2 fwd
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float Ballast = 0.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bSnorkel = false;     // toma de aire a la altura del techo
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bRack = false;        // baca con bidones, rueda y barra de luz
 };
 
 struct FDustlineModel
@@ -78,6 +80,8 @@ public:
 	float Flood = 0.f;           // 0..1 agua dentro del habitáculo
 	float WetTyres = 0.f;        // neumáticos mojados tras vadear
 	float WetBrakes = 0.f;       // frenos mojados (frenan menos hasta que se secan frenando)
+	float Dirt = 0.f, DirtH = 40.f, DirtShown = -1.f, DirtHShown = -1.f;   // barro en la carrocería (0..1) y hasta qué altura (cm)
+	void UpdateDirt(float Dt, float RainNow);
 	float BowWave = 0.f;         // altura de la ola de proa (m)
 	float CurrentMs = 0.f;       // corriente del agua bajo el coche (m/s)
 	bool bHydrolock = false;     // el motor tragó agua acelerado: no arranca hasta pasar por el taller

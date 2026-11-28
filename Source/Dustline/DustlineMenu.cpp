@@ -2,6 +2,7 @@
 #include "DustlineCar.h"
 #include "DustlineUI.h"
 #include "DustlineSettings.h"
+#include "DustlineCareer.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
@@ -303,7 +304,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 		Add(Group({
 			Row(TEXT("Calidad general"), Segmented({ TEXT("Baja"), TEXT("Media"), TEXT("Alta"), TEXT("Máxima") }, []() { return DustlineGfx::GetQuality(); }, [W](int32 I) { DustlineGfx::SetQuality(W, I); }), TEXT("Sombras, vegetación, texturas y distancia de dibujado")),
 			SliderRow(TEXT("Escala de render"), 50.f, 100.f, [&S]() { return S.RenderScale; }, [&S](float V2) { S.RenderScale = V2; S.ApplyGlobal(); }, [](float V2) { return FString::Printf(TEXT("%.0f %%"), V2); }, FSimpleDelegate(), FSimpleDelegate::CreateLambda([&S]() { S.Save(); }), 5.f) }));
-		Add(SNew(SBox).Padding(FMargin(20, 12, 20, 0))[ Text(TEXT("Bajar la escala de render es lo que más fotogramas por segundo gana en un Mac con poca memoria."), 15.f, Label2()) ]);
+		Add(SNew(SBox).Padding(FMargin(20, 12, 20, 0))[ Text(TEXT("Bajar la escala de render es lo que más fotogramas por segundo gana en un Mac con poca memoria."), 15.f, Label2(), 0, true) ]);
 	}
 	else if (P == 1) // Juego
 	{
@@ -317,7 +318,13 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 			Row(TEXT("Cambio"), Segmented({ TEXT("Automático"), TEXT("Manual") }, [&S]() { return S.bManual ? 1 : 0; }, [&S](int32 I) { S.bManual = I == 1; S.Save(); }), TEXT("En manual: E sube, Q baja (desde 1ª, marcha atrás)")),
 			Row(TEXT("ABS"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bAbs; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bAbs = B; S.Save(); })), TEXT("Sin ABS las ruedas se bloquean al frenar fuerte y el coche desliza")),
 			Row(TEXT("Control de tracción y estabilidad"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bTc; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bTc = B; S.Save(); })), TEXT("Recorta el gas si patinan las ruedas y frena una rueda si el coche se cruza (ESC en los modelos que lo traen). Sin él, a fondo en barro o nieve el coche se entierra")) }));
-		Add(SNew(SBox).Padding(FMargin(20, 12, 20, 0))[ Text(TEXT("El clima no se elige: cambia solo y depende de la zona del mapa. Frentes de lluvia y nieve cruzan con el viento, la montaña es más fría y el suelo se moja, se embarra, se hiela o se cubre de nieve poco a poco."), 15.f, Label2()) ]);
+		Add(SNew(SBox).Padding(FMargin(20, 12, 20, 0))[ Text(TEXT("El clima no se elige: cambia solo y depende de la zona del mapa. Frentes de lluvia y nieve cruzan con el viento, la montaña es más fría y el suelo se moja, se embarra, se hiela o se cubre de nieve poco a poco."), 15.f, Label2(), 0, true) ]);
+		Add(Section(TEXT("Progreso")));
+		Add(Group({
+			Row(TEXT("Modo carrera"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bCareer; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bCareer = B; S.Save(); })),
+				FString::Printf(TEXT("Las piezas del taller cuestan créditos. Se ganan descubriendo lugares (%s cada uno) y conduciendo (1 cr cada %.0f m). Sin él, todo el taller está libre"), *DustlineCareer::Fmt(DustlineCareer::PoiReward), DustlineCareer::MetersPerCredit)),
+			Row(TEXT("Créditos"), SNew(STextBlock).Font(Font(19.f, 1)).ColorAndOpacity(Label2()).Text_Lambda([]() { return FText::FromString(DustlineCareer::Fmt(DustlineCareer::Credits())); })),
+			Row(TEXT("Empezar la carrera de cero"), Button(TEXT("Empezar de cero"), []() { DustlineCareer::Reset(); }, EBtn::Danger, 0.f, 18.f), FString::Printf(TEXT("Vuelves a %s y sin piezas compradas (lo montado en cada coche se queda)"), *DustlineCareer::Fmt(DustlineCareer::StartCredits))) }));
 		Add(Section(TEXT("Sonido")));
 		Add(Group({ SliderRow(TEXT("Volumen"), 0.f, 100.f, [&S]() { return S.Volume; }, [&S](float V2) { S.Volume = V2; }, [](float V2) { return FString::Printf(TEXT("%.0f %%"), V2); }, FSimpleDelegate(), FSimpleDelegate::CreateLambda([&S]() { S.Save(); }), 5.f) }));
 		Add(Section(TEXT("Interfaz")));
@@ -451,7 +458,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 	TSharedRef<SWidget> Chip = Glass(
 		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ SNew(STextBlock).Font(Font(20.f)).ColorAndOpacity(Label()).Text_Lambda([C]() { return FText::FromString(C ? ADustlineCar::ModelName(C->Setup.Model) : FString()); }) ]
-		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(14, 0, 0, 0)[ SNew(STextBlock).Font(Font(17.f)).ColorAndOpacity(Label2()).Text_Lambda([C]() { return FText::FromString(C ? FString::Printf(TEXT("%.0f CV  ·  %.0f kg"), C->Sp.HP * (1.f + 0.5f * C->Setup.Turbo * C->TurboSpool), C->Sp.Mass) : FString()); }) ],
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(14, 0, 0, 0)[ SNew(STextBlock).Font(Font(17.f)).ColorAndOpacity(Label2()).Text_Lambda([C]() { return FText::FromString(C ? FString::Printf(TEXT("%.0f CV  ·  %.0f kg%s"), C->Sp.HP * (1.f + 0.5f * C->Setup.Turbo * C->TurboSpool), C->Sp.Mass, DustlineCareer::Enabled() ? *(TEXT("  ·  ") + DustlineCareer::Fmt(DustlineCareer::Credits())) : TEXT("")) : FString()); }) ],
 		26.f, FMargin(22, 11));
 
 	auto HintKey = [](const TCHAR* K, const TCHAR* L) -> TSharedRef<SWidget>

@@ -120,6 +120,7 @@ UMaterialInstanceDynamic* ADustlineCar::MakeMat(const TCHAR* Path, const FLinear
 
 void ADustlineCar::RefreshMaterials()
 {
+	DirtShown = DirtHShown = -1.f;   // materiales nuevos: hay que volver a poner el barro
 	const TCHAR* G = TEXT("/Game/Cars/M_CarGeneric.M_CarGeneric");
 	const float Fade = bXRay ? 0.12f : 1.f;
 	auto Set = [&](int32 id, UMaterialInstanceDynamic* M) { if (M) Mats.Add(id, M); };
@@ -164,7 +165,7 @@ void ADustlineCar::Rebuild()
 		const FDustlineModel& M = GetModel(Setup.Model);
 		const float gc = GroundClearance();
 		// centro de masas realista (bajo: chasis, motor y ejes) en vez del centro geométrico de la carrocería
-		ZCom = gc + 0.31f * (BodyH() - gc);
+		ZCom = gc + 0.31f * (BodyH() - gc) + (Setup.bRack ? 3.f : 0.f);   // la baca sube un poco el centro de masas
 		ComX = (HandlingFor(M.Style).FrontW - 0.5f) * (FrontX() - RearX()) / 100.f;   // centro de masas desplazado hacia el lado pesado
 		Visual->SetRelativeLocation(FVector(-ComX * 100.f, 0, -ZCom));
 		// la caja de barrido (árboles/rocas) cubre la parte media; el suelo lo tocan los puntos de contacto de la carrocería

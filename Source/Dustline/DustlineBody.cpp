@@ -160,6 +160,18 @@ void ADustlineCar::BuildBuggyBody(FDustlineMeshBuilder& B)
 	B.Cylinder(SChrome, FVector(xRe + 6.f, 28.f, gc + 20.f), FVector(-1.f, 0.f, 0.f), 4.6f, 12.f, 14, true);
 	B.Cylinder(SDark, FVector(xRe - 5.f, 28.f, gc + 20.f), FVector(-1.f, 0.f, 0.f), 3.4f, 1.f, 12, true);
 	B.Box(SDark, FVector(xRe + 0.3f, 0.f, gc + 26.f), FVector(0.4f, 15.f, 7.f));                                             // matrícula
+	// baca opcional sobre el techo plano: barandilla baja, dos bidones y una bolsa estanca
+	if (Setup.bRack)
+	{
+		const float zk = zT + 3.f, hw = 48.f, xa = -56.f, xb = 2.f;
+		for (int32 s = -1; s <= 1; s += 2)
+		{
+			B.Tube(SRubber, { FVector(xa, s * hw, zk + 7.f), FVector(xb, s * hw, zk + 7.f) }, 1.2f, 6);
+			for (float xq : { xa, 0.5f * (xa + xb), xb }) B.Tube(SRubber, { FVector(xq, s * hw, zk), FVector(xq, s * hw, zk + 7.f) }, 1.0f, 6);
+			B.SuperBox(SAccent, FVector(xa + 12.f, s * 30.f, zk + 20.f), FVector(11.f, 7.f, 19.f), 0.18f, 6);
+		}
+		B.SuperBox(SInterior, FVector(-16.f, 0.f, zk + 9.f), FVector(16.f, 38.f, 9.f), 0.35f, 8);
+	}
 	(void)L;
 }
 

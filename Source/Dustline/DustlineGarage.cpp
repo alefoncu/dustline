@@ -7,6 +7,7 @@
 #include "DustlineUI.h"
 #include "DustlineMenu.h"
 #include "DustlineSettings.h"
+#include "DustlineCareer.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Images/SImage.h"
 #include "Engine/World.h"
@@ -54,7 +55,7 @@ ADustlineCar::FGarageStats ADustlineCar::StatsFor(const FDustlineSetup& S) const
 	FGarageStats R;
 	R.HP = S.EngineCC * 0.065f; R.PeakHP = R.HP * (1.f + 0.5f * S.Turbo);
 	const float wheelMass = S.TireRadiusM * S.TireRadiusM * S.TireWidthM * 520.f, stock = M.Radius * M.Radius * M.Width * 520.f;
-	R.Mass = FMath::Max(450.f, M.Mass + (S.EngineCC - M.CC) * 0.065f + (S.Turbo - M.Turbo) * 30.f + (wheelMass - stock) + S.Ballast + (S.TravelM - M.Travel) * 60.f);
+	R.Mass = FMath::Max(450.f, M.Mass + (S.EngineCC - M.CC) * 0.065f + (S.Turbo - M.Turbo) * 30.f + (wheelMass - stock) + S.Ballast + (S.TravelM - M.Travel) * 60.f + (S.bRack ? 45.f : 0.f) + (S.bSnorkel ? 6.f : 0.f));
 	R.VMaxKmh = 34.f * (S.TireRadiusM / 0.46f) * (1.f + 0.12f * S.Turbo) * (M.Style == 2 ? 0.8f : 1.f) * 3.6f;
 	R.PowerToWeight = R.PeakHP / R.Mass * 1000.f;
 	R.Clearance = GroundClearance();
@@ -67,7 +68,7 @@ ADustlineCar::FGarageStats ADustlineCar::GarageStats() const { return StatsFor(S
 
 namespace
 {
-struct FPart { FString Name, Desc; TFunction<void(FDustlineSetup&)> Apply; TFunction<bool(const FDustlineSetup&)> Match; };
+struct FPart { FString Name, Desc; TFunction<void(FDustlineSetup&)> Apply; TFunction<bool(const FDustlineSetup&)> Match; int32 Price = 0; FString Key; };
 bool Eq(float a, float b) { return FMath::IsNearlyEqual(a, b, 0.006f); }
 FString EngDesc(float cc)
 {
@@ -75,19 +76,27 @@ FString EngDesc(float cc)
 	const TCHAR* Rasgo = cc < 2000.f ? TEXT("Tapa de plástico lisa") : (cc < 2800.f ? TEXT("Cubierta con nervios") : (cc < 3600.f ? TEXT("Pleno pulido") : (cc < 4800.f ? TEXT("Filtro redondo clásico") : (cc < 6300.f ? TEXT("Filtro cónico rojo") : (cc < 8000.f ? TEXT("Trompetas de admisión") : TEXT("Supercargador"))))));
 	return FString::Printf(TEXT("%.1f L  ·  %d cil.  ·  %.0f CV  ·  %s"), cc / 1000.f, cyl, cc * 0.065f, Rasgo);
 }
-const TCHAR* GCatNames[] = { TEXT("Motor"), TEXT("Turbo"), TEXT("Ruedas"), TEXT("Neumáticos"), TEXT("Suspensión"), TEXT("Tracción"), TEXT("Chasis"), TEXT("Pintura") };
+const TCHAR* GCatNames[] = { TEXT("Motor"), TEXT("Turbo"), TEXT("Ruedas"), TEXT("Neumáticos"), TEXT("Suspensión"), TEXT("Tracción"), TEXT("Chasis"), TEXT("Equipo"), TEXT("Pintura") };
+constexpr int32 CatPaint = 8;
+constexpr int32 PaintPrice = 300;
 
 TArray<FPart> MakeParts(int32 Cat, const FDustlineModel& M)
 {
 	TArray<FPart> P;
-	auto Add = [&P](const FString& N, const FString& D, TFunction<void(FDustlineSetup&)> A, TFunction<bool(const FDustlineSetup&)> Mt) { P.Add({ N, D, A, Mt }); };
+	int32 Price = 0;   // precio de la siguiente pieza (las originales y "sin" no cuestan)
+	auto Add = [&P, &Price, Cat, &M](const FString& N, const FString& D, TFunction<void(FDustlineSetup&)> A, TFunction<bool(const FDustlineSetup&)> Mt)
+	{
+		FDustlineSetup S0; S0.EngineCC = M.CC; S0.Turbo = M.Turbo; S0.Stiffness = M.Stiff; S0.TravelM = M.Travel; S0.TireRadiusM = M.Radius; S0.TireWidthM = M.Width; S0.TireType = M.Tire; S0.Drive = M.Drive; S0.Ballast = 0.f;
+		if (Mt(S0)) Price = 0;   // lo que equivale a la pieza de serie no se cobra
+		FPart X{ N, D, A, Mt }; X.Price = Price; X.Key = FString::Printf(TEXT("%d:%d:%s"), M.Style, Cat, *N); P.Add(X); Price = 0; };
+	auto R100 = [](float V) { return FMath::RoundToInt(V / 100.f) * 100; };
 	if (Cat == 0)
 	{
 		const float Stock = M.CC;
 		Add(TEXT("Original"), TEXT("Motor de fábrica  ·  ") + EngDesc(Stock), [Stock](FDustlineSetup& S) { S.EngineCC = Stock; }, [Stock](const FDustlineSetup& S) { return Eq(S.EngineCC, Stock); });
 		struct E { const TCHAR* N; float CC; };
 		for (const E& e : { E{ TEXT("Compacto"), 1600.f }, E{ TEXT("Turismo"), 2400.f }, E{ TEXT("Deportivo V6"), 3200.f }, E{ TEXT("V8 todoterreno"), 4000.f }, E{ TEXT("V8 alto rendimiento"), 5700.f }, E{ TEXT("V8 competición"), 7000.f }, E{ TEXT("V10 extremo"), 9000.f } })
-		{ const float CC = e.CC; Add(e.N, EngDesc(CC), [CC](FDustlineSetup& S) { S.EngineCC = CC; }, [CC](const FDustlineSetup& S) { return Eq(S.EngineCC, CC); }); }
+		{ const float CC = e.CC; Price = R100(CC * 1.5f); Add(e.N, EngDesc(CC), [CC](FDustlineSetup& S) { S.EngineCC = CC; }, [CC](const FDustlineSetup& S) { return Eq(S.EngineCC, CC); }); }
 	}
 	else if (Cat == 1)
 	{
@@ -96,7 +105,7 @@ TArray<FPart> MakeParts(int32 Cat, const FDustlineModel& M)
 		struct T { const TCHAR* N; const TCHAR* D; float V; };
 		for (const T& t : { T{ TEXT("Sin turbo"), TEXT("Sin turbo ni intercooler: respuesta inmediata y menos peso"), 0.f }, T{ TEXT("Turbo pequeño"), TEXT("Un turbo compacto  ·  +30 % de potencia"), 0.6f }, T{ TEXT("Turbo medio"), TEXT("Un turbo con intercooler grande  ·  +60 %"), 1.2f },
 			T{ TEXT("Doble turbo"), TEXT("Dos turbos  ·  +90 % de potencia"), 1.8f }, T{ TEXT("Competición"), TEXT("Dos turbos grandes, compresor cromado y fundas térmicas  ·  +120 %"), 2.4f }, T{ TEXT("Extremo"), TEXT("Tres turbos y botella de nitro  ·  +150 %"), 3.0f } })
-		{ const float V = t.V; Add(t.N, t.D, [V](FDustlineSetup& S) { S.Turbo = V; }, [V](const FDustlineSetup& S) { return Eq(S.Turbo, V); }); }
+		{ const float V = t.V; Price = V < 0.05f ? 500 : R100(1000.f + V * 4300.f); Add(t.N, t.D, [V](FDustlineSetup& S) { S.Turbo = V; }, [V](const FDustlineSetup& S) { return Eq(S.Turbo, V); }); }
 	}
 	else if (Cat == 2)
 	{
@@ -104,7 +113,7 @@ TArray<FPart> MakeParts(int32 Cat, const FDustlineModel& M)
 		Add(TEXT("Originales"), FString::Printf(TEXT("De fábrica  ·  %.0f cm de radio  ·  %.0f cm de ancho"), R * 100.f, W * 100.f), [R, W](FDustlineSetup& S) { S.TireRadiusM = R; S.TireWidthM = W; }, [R, W](const FDustlineSetup& S) { return Eq(S.TireRadiusM, R) && Eq(S.TireWidthM, W); });
 		struct Wh { const TCHAR* N; float R, W; };
 		for (const Wh& w : { Wh{ TEXT("Urbanas 15\""), 0.33f, 0.22f }, Wh{ TEXT("Estándar 17\""), 0.40f, 0.28f }, Wh{ TEXT("Todoterreno 33\""), 0.42f, 0.29f }, Wh{ TEXT("Grandes 35\""), 0.445f, 0.31f }, Wh{ TEXT("Monster 40\""), 0.51f, 0.35f }, Wh{ TEXT("Gigantes 44\""), 0.56f, 0.38f } })
-		{ const float r = w.R, wd = w.W; Add(w.N, FString::Printf(TEXT("%.0f cm de radio  ·  %.0f cm de ancho"), r * 100.f, wd * 100.f), [r, wd](FDustlineSetup& S) { S.TireRadiusM = r; S.TireWidthM = wd; }, [r, wd](const FDustlineSetup& S) { return Eq(S.TireRadiusM, r) && Eq(S.TireWidthM, wd); }); }
+		{ const float r = w.R, wd = w.W; Price = R100(FMath::Max(800.f, (r - 0.30f) * 25000.f)); Add(w.N, FString::Printf(TEXT("%.0f cm de radio  ·  %.0f cm de ancho"), r * 100.f, wd * 100.f), [r, wd](FDustlineSetup& S) { S.TireRadiusM = r; S.TireWidthM = wd; }, [r, wd](const FDustlineSetup& S) { return Eq(S.TireRadiusM, r) && Eq(S.TireWidthM, wd); }); }
 	}
 	else if (Cat == 3)
 	{
@@ -112,7 +121,7 @@ TArray<FPart> MakeParts(int32 Cat, const FDustlineModel& M)
 		int32 i = 0;
 		for (const Ty& t : { Ty{ TEXT("Carretera"), TEXT("Mucho agarre en asfalto y firme duro; resbala en barro y nieve") }, Ty{ TEXT("Todo terreno"), TEXT("Buen equilibrio entre tierra, hierba y carretera") }, Ty{ TEXT("Barro"), TEXT("Tacos profundos: arrastran en barro y tierra blanda") },
 			Ty{ TEXT("Clavos"), TEXT("Imprescindibles sobre nieve y hielo") }, Ty{ TEXT("Balón"), TEXT("Gran superficie: flotan sobre arena y nieve blanda") } })
-		{ const int32 k = i++; Add(t.N, t.D, [k](FDustlineSetup& S) { S.TireType = k; }, [k](const FDustlineSetup& S) { return S.TireType == k; }); }
+		{ const int32 k = i++; static const int32 TP[] = { 700, 900, 1300, 1500, 1800 }; Price = k == M.Tire ? 0 : TP[k]; Add(t.N, t.D, [k](FDustlineSetup& S) { S.TireType = k; }, [k](const FDustlineSetup& S) { return S.TireType == k; }); }
 	}
 	else if (Cat == 4)
 	{
@@ -121,23 +130,76 @@ TArray<FPart> MakeParts(int32 Cat, const FDustlineModel& M)
 		struct Su { const TCHAR* N; const TCHAR* D; float St, Tr; };
 		for (const Su& s : { Su{ TEXT("Deportiva baja"), TEXT("Dura y baja: precisa en firme, mala en terreno roto"), 1.9f, 0.30f }, Su{ TEXT("Confort"), TEXT("Blanda y filtrante, algo de balanceo"), 0.55f, 0.55f }, Su{ TEXT("Todoterreno"), TEXT("Recorrido largo y dureza media"), 0.95f, 0.70f },
 			Su{ TEXT("Competición"), TEXT("Dura con mucho recorrido: la mejor para saltos"), 1.5f, 0.80f }, Su{ TEXT("Rock crawler"), TEXT("Recorrido máximo para trepar rocas"), 0.8f, 0.95f } })
-		{ const float a = s.St, b = s.Tr; Add(s.N, FString::Printf(TEXT("%s  ·  ×%.1f  ·  %.0f cm"), s.D, a, b * 100.f), [a, b](FDustlineSetup& S) { S.Stiffness = a; S.TravelM = b; }, [a, b](const FDustlineSetup& S) { return Eq(S.Stiffness, a) && Eq(S.TravelM, b); }); }
+		{ const float a = s.St, b = s.Tr; Price = R100(600.f + b * 5000.f); Add(s.N, FString::Printf(TEXT("%s  ·  ×%.1f  ·  %.0f cm"), s.D, a, b * 100.f), [a, b](FDustlineSetup& S) { S.Stiffness = a; S.TravelM = b; }, [a, b](const FDustlineSetup& S) { return Eq(S.Stiffness, a) && Eq(S.TravelM, b); }); }
 	}
 	else if (Cat == 5)
 	{
 		struct Dr { const TCHAR* N; const TCHAR* D; };
 		int32 i = 0;
 		for (const Dr& d : { Dr{ TEXT("4×4 integral"), TEXT("Tracción en las cuatro ruedas: máximo agarre y estabilidad") }, Dr{ TEXT("Trasera"), TEXT("Más divertida y deslizante, exige más pilotaje") }, Dr{ TEXT("Delantera"), TEXT("Estable y fácil, pero se queda sin tracción en cuesta") } })
-		{ const int32 k = i++; Add(d.N, d.D, [k](FDustlineSetup& S) { S.Drive = k; }, [k](const FDustlineSetup& S) { return S.Drive == k; }); }
+		{ const int32 k = i++; Price = k == M.Drive ? 0 : 2000; Add(d.N, d.D, [k](FDustlineSetup& S) { S.Drive = k; }, [k](const FDustlineSetup& S) { return S.Drive == k; }); }
 	}
 	else if (Cat == 6)
 	{
 		struct Ch { const TCHAR* N; const TCHAR* D; float B; };
 		for (const Ch& c : { Ch{ TEXT("Aligerado"), TEXT("Sin extras: −250 kg, más ágil pero menos estable"), -250.f }, Ch{ TEXT("Estándar"), TEXT("El peso de serie"), 0.f }, Ch{ TEXT("Reforzado"), TEXT("Barras y protecciones: +350 kg"), 350.f }, Ch{ TEXT("Blindado"), TEXT("Lastre máximo: +700 kg, muy estable"), 700.f } })
-		{ const float B = c.B; Add(c.N, c.D, [B](FDustlineSetup& S) { S.Ballast = B; }, [B](const FDustlineSetup& S) { return Eq(S.Ballast, B); }); }
+		{ const float B = c.B; Price = B == 0.f ? 0 : R100(1000.f + FMath::Abs(B) * 3.5f); Add(c.N, c.D, [B](FDustlineSetup& S) { S.Ballast = B; }, [B](const FDustlineSetup& S) { return Eq(S.Ballast, B); }); }
+	}
+	else if (Cat == 7)
+	{
+		const bool bSnorkelOk = M.Style == 0 || M.Style == 2 || M.Style == 5;   // el Defender y el crawler lo traen de serie; el buggy lleva el motor detrás
+		if (bSnorkelOk)
+		{
+			Add(TEXT("Sin snorkel"), TEXT("Toma de aire de serie, a media altura del vano motor"), [](FDustlineSetup& S) { S.bSnorkel = false; }, [](const FDustlineSetup& S) { return !S.bSnorkel; });
+			Price = 1200; Add(TEXT("Snorkel"), TEXT("Lleva la toma de aire a la altura del techo: vadea mucho más hondo sin ahogar el motor"), [](FDustlineSetup& S) { S.bSnorkel = true; }, [](const FDustlineSetup& S) { return S.bSnorkel; });
+		}
+		if (M.Style != 6) Add(TEXT("Sin baca"), TEXT("Techo despejado"), [](FDustlineSetup& S) { S.bRack = false; }, [](const FDustlineSetup& S) { return !S.bRack; });
+		if (M.Style != 6) Price = 1600;
+		if (M.Style != 6) Add(TEXT("Baca de expedición"), TEXT("Baca tubular con bidones, rueda de repuesto y barra de luz  ·  +45 kg y algo más de balanceo"), [](FDustlineSetup& S) { S.bRack = true; }, [](const FDustlineSetup& S) { return S.bRack; });
 	}
 	return P;
 }
+}
+
+namespace
+{
+	bool Owned(const FPart& P, const FDustlineSetup& S) { return !DustlineCareer::Enabled() || P.Price <= 0 || P.Match(S) || DustlineCareer::Owns(P.Key); }
+	/** Monta la pieza: si no es tuya, la compra (modo carrera). false = no llegan los créditos. */
+	bool TryFit(const FPart& P, FDustlineSetup& S)
+	{
+		if (!Owned(P, S)) { if (!DustlineCareer::Spend(P.Price)) return false; DustlineCareer::Grant(P.Key); }
+		P.Apply(S); return true;
+	}
+}
+
+/** -careertest: prueba del modo carrera sobre el coche de serie (escribe CAREER ... en el log). */
+void DustlineCareerSelfTest(ADustlineCar* Car)
+{
+	FDustlineSettings::Get().bCareer = true;
+	DustlineCareer::Reset();
+	const FDustlineModel& M = ADustlineCar::GetModel(Car->Setup.Model);
+	const TArray<FPart> Eng = MakeParts(0, M);
+	const FPart& Big = Eng.Last();      // V10: 13.500 cr
+	const FPart& Orig = Eng[0];
+	auto Log = [](const TCHAR* What, bool Ok) { UE_LOG(LogTemp, Display, TEXT("CAREER %s %s  (créditos %d)"), What, Ok ? TEXT("OK") : TEXT("FALLO"), DustlineCareer::Credits()); };
+	Log(TEXT("inicio 4000"), DustlineCareer::Credits() == DustlineCareer::StartCredits);
+	Log(TEXT("original gratis"), Orig.Price == 0 && Owned(Orig, Car->Setup));
+	FDustlineSetup S = Car->Setup;
+	Log(TEXT("V10 sin dinero se rechaza"), !TryFit(Big, S) && FMath::IsNearlyEqual(S.EngineCC, Car->Setup.EngineCC) && DustlineCareer::Credits() == 4000);
+	DustlineCareer::Earn(10000);
+	Log(TEXT("V10 con dinero se compra"), TryFit(Big, S) && FMath::IsNearlyEqual(S.EngineCC, 9000.f) && DustlineCareer::Credits() == 14000 - Big.Price);
+	const int32 After = DustlineCareer::Credits();
+	Log(TEXT("volver al original gratis"), TryFit(Orig, S) && DustlineCareer::Credits() == After);
+	Log(TEXT("V10 ya comprado: montar gratis"), TryFit(Big, S) && DustlineCareer::Credits() == After && DustlineCareer::Owns(Big.Key));
+	const int32 G = DustlineCareer::AddDistance(1000.f);
+	Log(TEXT("1 km = 250 cr"), G == 250);
+	FDustlineSettings::Get().bCareer = false;
+	FDustlineSetup S2 = Car->Setup; const TArray<FPart> Tur = MakeParts(1, M);
+	Log(TEXT("modo libre: todo gratis"), TryFit(Tur.Last(), S2) && DustlineCareer::Credits() == After + 250);
+	FDustlineSettings::Get().bCareer = true;
+	int32 NP = 0; for (int32 c = 0; c < CatPaint; ++c) for (const FPart& P : MakeParts(c, M)) { ++NP; UE_LOG(LogTemp, Display, TEXT("CAREER pieza %d %-24s %6d cr"), c, *P.Name, P.Price); }
+	DustlineCareer::Reset();
+	UE_LOG(LogTemp, Display, TEXT("CAREER fin (%d piezas)"), NP);
 }
 
 TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
@@ -145,6 +207,8 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 	using namespace DUI;
 	ADustlineCar* Car = this;
 	FDustlineSettings* St = &FDustlineSettings::Get();
+	// lo que ya lleva montado el coche es tuyo (también al pasar de modo libre a carrera)
+	for (int32 c = 0; c < CatPaint; ++c) for (const FPart& P : MakeParts(c, GetModel(Setup.Model))) if (P.Price > 0 && P.Match(Setup)) DustlineCareer::Grant(P.Key);
 	TSharedRef<int32> Tab = MakeShared<int32>(0);
 	TSharedRef<TSharedPtr<SBox>> Holder = MakeShared<TSharedPtr<SBox>>();
 
@@ -173,14 +237,29 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 	auto PartCard = [Car, DeltaChip](const FPart& P) -> TSharedRef<SWidget>
 	{
 		TSharedPtr<SButton> Btn;
+		TSharedRef<double> Denied = MakeShared<double>(-100.0);
 		SAssignNew(Btn, SButton).ButtonStyle(&FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder")).ContentPadding(FMargin(0))
-			.OnClicked(FOnClicked::CreateLambda([Car, P]() { P.Apply(Car->Setup); Car->MarkSetupDirty(); Car->SaveSetupToDisk(); return FReply::Handled(); }))
+			.OnClicked(FOnClicked::CreateLambda([Car, P, Denied]()
+			{
+				if (P.Match(Car->Setup)) return FReply::Handled();
+				if (!TryFit(P, Car->Setup)) { *Denied = FPlatformTime::Seconds(); return FReply::Handled(); }
+				Car->MarkSetupDirty(); Car->SaveSetupToDisk(); return FReply::Handled();
+			}))
 			[ SNew(SBorder).BorderImage_Lambda([Car, P, W = TWeakPtr<SButton>(Btn)]() { if (P.Match(Car->Setup)) return Box(Col(10, 132, 255, 0.20f), 18.f, Accent(), 2.f); TSharedPtr<SButton> B = W.Pin(); return (B.IsValid() && B->IsHovered()) ? Box(Col(255, 255, 255, 0.13f), 18.f, Col(255, 255, 255, 0.20f), 1.f) : Box(Card(), 18.f, Hair(), 1.f); }).Padding(FMargin(20, 15, 16, 15))
 				[ SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 					[ SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()[ Text(P.Name, 21.f, Label()) ]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[ Text(P.Desc, 15.f, Label2(), 0, true) ] ]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)[ Text(P.Desc, 15.f, Label2(), 0, true) ]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 0)[ SNew(STextBlock).Font(Font(16.f, 1))
+							.Visibility_Lambda([Car, P, Denied]() { return DustlineCareer::Enabled() && !P.Match(Car->Setup) && (P.Price > 0 || FPlatformTime::Seconds() - *Denied < 2.5) ? EVisibility::Visible : EVisibility::Collapsed; })
+							.ColorAndOpacity_Lambda([Car, P, Denied]() { if (FPlatformTime::Seconds() - *Denied < 2.5) return Red(); if (Owned(P, Car->Setup)) return Label2(); return DustlineCareer::Credits() >= P.Price ? Accent() : Orange(); })
+							.Text_Lambda([Car, P, Denied]()
+							{
+								if (FPlatformTime::Seconds() - *Denied < 2.5) return FText::FromString(FString::Printf(TEXT("Te faltan %s  ·  explora y conduce para ganar más"), *DustlineCareer::Fmt(P.Price - DustlineCareer::Credits())));
+								if (Owned(P, Car->Setup)) return FText::FromString(TEXT("Comprada  ·  montar gratis"));
+								return FText::FromString(FString::Printf(TEXT("Comprar y montar  ·  %s"), *DustlineCareer::Fmt(P.Price)));
+							}) ] ]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).HAlign(HAlign_Right).Padding(12, 0, 0, 0)
 					[ SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[ DeltaChip(P, 0) ]
@@ -198,7 +277,7 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 	auto BuildTab = [Car, PartCard](int32 T) -> TSharedRef<SWidget>
 	{
 		TSharedRef<SVerticalBox> V = SNew(SVerticalBox);
-		if (T == 7)
+		if (T == CatPaint)
 		{
 			TSharedRef<SHorizontalBox> Paints = SNew(SHorizontalBox);
 			const FLinearColor Cols[] = { FLinearColor(0.50f, 0.52f, 0.55f), FLinearColor(0.02f, 0.02f, 0.025f), FLinearColor(0.85f, 0.85f, 0.82f), FLinearColor(0.70f, 0.03f, 0.02f), FLinearColor(0.95f, 0.62f, 0.02f),
@@ -208,21 +287,28 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 				FLinearColor Opaque = C; Opaque.A = 1.f;
 				Paints->AddSlot().AutoWidth().Padding(0, 0, 14, 0)
 				[ SNew(SButton).ButtonStyle(&FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder")).ContentPadding(FMargin(0))
-					.OnClicked(FOnClicked::CreateLambda([Car, C]() { Car->Setup.Paint = C; Car->MarkSetupDirty(); Car->SaveSetupToDisk(); return FReply::Handled(); }))
+					.OnClicked(FOnClicked::CreateLambda([Car, C, Key = FString::Printf(TEXT("%d:%d:%.2f,%.2f,%.2f"), GetModel(Car->Setup.Model).Style, CatPaint, C.R, C.G, C.B)]()
+					{
+						if (FLinearColor::Dist(Car->Setup.Paint, C) < 0.02f) return FReply::Handled();
+						if (DustlineCareer::Enabled() && !DustlineCareer::Owns(Key)) { if (!DustlineCareer::Spend(PaintPrice)) return FReply::Handled(); DustlineCareer::Grant(Key); }
+						Car->Setup.Paint = C; Car->MarkSetupDirty(); Car->SaveSetupToDisk(); return FReply::Handled();
+					}))
 					[ SNew(SBox).WidthOverride(42.f).HeightOverride(42.f)
 						[ SNew(SBorder).BorderImage_Lambda([Car, C, Opaque]() { const bool Sel = FLinearColor::Dist(Car->Setup.Paint, C) < 0.02f; return Sel ? Box(Opaque, 21.f, FLinearColor::White, 3.f) : Box(Opaque, 21.f, Col(255, 255, 255, 0.22f), 1.f); }) ] ] ];
 			}
 			V->AddSlot().AutoHeight().Padding(4, 8, 0, 0)[ Paints ];
+			if (DustlineCareer::Enabled()) V->AddSlot().AutoHeight().Padding(4, 16, 0, 0)[ Text(FString::Printf(TEXT("Cada color nuevo cuesta %s; los que ya has pagado se vuelven a poner gratis."), *DustlineCareer::Fmt(PaintPrice)), 15.f, Label2(), 0, true) ];
 			return V;
 		}
 		const TArray<FPart> Parts = MakeParts(T, GetModel(Car->Setup.Model));
+		if (Parts.Num() == 0) V->AddSlot().AutoHeight().Padding(4, 8, 0, 0)[ Text(TEXT("Este modelo ya sale de fábrica con snorkel y jaula: no admite más equipo."), 16.f, Label2(), 0, true) ];
 		int32 Idx = 0; for (const FPart& P : Parts) V->AddSlot().AutoHeight().Padding(0, 0, 0, 10)[ SNew(SAppear).Rise(12.f).Delay(0.03f * Idx++)[ PartCard(P) ] ];
 		return V;
 	};
 	auto SetTab = [Car, Tab, Holder, BuildTab](int32 T)
 	{
 		*Tab = T;
-		static const int32 Focus[] = { 1, 1, 2, 2, 3, 3, 0, 0 };
+		static const int32 Focus[] = { 1, 1, 2, 2, 3, 3, 0, 0, 0 };
 		Car->GarageFocus = Focus[T]; Car->SetXRay(T == 0 || T == 1 || T == 4);
 		if (Holder->IsValid()) (*Holder)->SetContent(BuildTab(T));
 	};
@@ -239,7 +325,7 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 			.OnClicked(FOnClicked::CreateLambda([SetTab, i]() { SetTab(i); return FReply::Handled(); }))
 			[ SNew(SBorder).BorderImage_Lambda([Tab, i, W = TWeakPtr<SButton>(Btn)]() { if (*Tab == i) return Box(Accent(), 14.f); TSharedPtr<SButton> B = W.Pin(); return (B.IsValid() && B->IsHovered()) ? Box(Col(255, 255, 255, 0.20f), 14.f) : Box(Col(255, 255, 255, 0.10f), 14.f); }).Padding(FMargin(0, 10)).HAlign(HAlign_Center)
 				[ Text(TabNames[i], 14.5f, Label()) ] ];
-		TabGrid->AddSlot(i % 4, i / 4)[ Btn.ToSharedRef() ];
+		TabGrid->AddSlot(i % 3, i / 3)[ Btn.ToSharedRef() ];
 	}
 
 	TSharedRef<SWidget> Header = SNew(SHorizontalBox)
@@ -247,6 +333,11 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 		[ SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()[ Text(TEXT("Taller"), 38.f, Label(), 1) ]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 0)[ SNew(STextBlock).Font(Font(18.f)).ColorAndOpacity(Label2()).Text_Lambda([Car]() { return FText::FromString(ModelName(Car->Setup.Model)); }) ] ]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 14, 0)
+		[ SNew(SBorder).Visibility_Lambda([]() { return DustlineCareer::Enabled() ? EVisibility::Visible : EVisibility::Collapsed; }).BorderImage(Box(Card(), 16.f, Hair(), 1.f)).Padding(FMargin(16, 8))
+			[ SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[ SNew(STextBlock).Font(Font(22.f, 1)).ColorAndOpacity(Label()).Text_Lambda([]() { return FText::FromString(DustlineCareer::Fmt(DustlineCareer::Credits())); }) ]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[ Text(TEXT("Créditos"), 13.f, Label2()) ] ] ]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Button(TEXT("Listo"), [Car]() { Car->CloseGarage(); }, EBtn::Primary, 0.f, 20.f) ];
 
 	TSharedRef<SWidget> Stats = SNew(SVerticalBox)
@@ -415,7 +506,7 @@ void ADustlineCar::BodyTest()
 	if (Phase != Mi * 10 + Step)
 	{
 		Phase = Mi * 10 + Step;
-		if (Step == 0) { SelectModel(Mi); Setup = StockSetup(Mi); bSetupDirty = true; if (!bShowcase) EnterShowcase(); OrbitSpeed = 0.f; }
+		if (Step == 0) { SelectModel(Mi); Setup = StockSetup(Mi); if (FParse::Param(FCommandLine::Get(), TEXT("dequip"))) Setup.bSnorkel = Setup.bRack = true; bSetupDirty = true; if (!bShowcase) EnterShowcase(); OrbitSpeed = 0.f; }
 		GarageOrbit = Ang[Step];
 	}
 	if (St > 2.7f && St < 2.8f) { static int32 Last = -1; if (Last != Phase) { Last = Phase; FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("/Volumes/SSD/UE-Cache/bd_%d_%s.png"), Mi, Tag[Step]), false, false); } }

@@ -1,4 +1,7 @@
 #include "DustlineCar.h"
+#include "DustlineCareer.h"
+#include "DustlineCarParts.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
 #include "GameFramework/PlayerController.h"
@@ -85,7 +88,7 @@ void ADustlineCar::ComputeSpec()
 	const FDustlineModel& M = GetModel(Setup.Model);
 	const float R = Setup.TireRadiusM, W = Setup.TireWidthM;
 	const float wheelMass = R * R * W * 520.f, stock = M.Radius * M.Radius * M.Width * 520.f;
-	Sp.Mass = FMath::Max(450.f, M.Mass + (Setup.EngineCC - M.CC) * 0.065f + (Setup.Turbo - M.Turbo) * 30.f + (wheelMass - stock) + Setup.Ballast + (Setup.TravelM - M.Travel) * 60.f);
+	Sp.Mass = FMath::Max(450.f, M.Mass + (Setup.EngineCC - M.CC) * 0.065f + (Setup.Turbo - M.Turbo) * 30.f + (wheelMass - stock) + Setup.Ballast + (Setup.TravelM - M.Travel) * 60.f + (Setup.bRack ? 45.f : 0.f) + (Setup.bSnorkel ? 6.f : 0.f));
 	Sp.HP = Setup.EngineCC * 0.065f;
 	const float peak = Sp.HP * (1.f + 0.5f * Setup.Turbo);
 	Sp.R = R; Sp.Width = W;
@@ -121,11 +124,11 @@ void ADustlineCar::ComputeSpec()
 	Sp.BrakeT = 1.15f * Sp.Mass * Gr * R * Hh.Brake;          // par total de freno (reparto 64/36)
 	Sp.HandT = 0.35f * Sp.Mass * Gr * R;           // por rueda trasera
 	const float CdA[7] = { 1.65f, 1.6f, 0.9f, 1.6f, 1.0f, 1.5f, 1.8f };
-	Sp.CdA = CdA[FMath::Clamp(St, 0, 6)];
+	Sp.CdA = CdA[FMath::Clamp(St, 0, 6)] + (Setup.bRack ? 0.12f : 0.f);
 	// caja de la carrocería en coordenadas locales (origen = centro de masas)
 	const float gc = GroundClearance();
 	Sp.BodyBot = (gc - ZCom) / 100.f; Sp.BodyTop = (BodyH() - ZCom) / 100.f; Sp.BodyL = L; Sp.BodyW = Wd;
-	const float IntakeFrac = St == 6 ? 1.05f : (St == 2 || St == 4 ? 0.42f : (Sp.bDiesel ? 0.55f : 0.5f));   // el crawler lleva snorkel
+	const float IntakeFrac = St == 6 ? 1.05f : (Setup.bSnorkel || St == 3) ? 0.97f : (St == 2 || St == 4 ? 0.42f : (Sp.bDiesel ? 0.55f : 0.5f));   // el crawler lleva snorkel
 	Sp.IntakeZ = Sp.BodyBot + IntakeFrac * (Sp.BodyTop - Sp.BodyBot);
 }
 
@@ -781,6 +784,44 @@ void ADustlineCar::UpdateCamera(float dt)
 	Cam->SetWorldLocationAndRotation(CamPos, (Loc + FVector(0, 0, 40) - CamPos).Rotation());
 }
 
+void DustlineCareerSelfTest(ADustlineCar* Car);
+void ADustlineCar::UpdateDirt(float Dt, float RainNow)
+{
+	static const float Forced = [] { float v = -1.f; FParse::Value(FCommandLine::Get(), TEXT("ddirt="), v); return v; }();
+	if (Forced >= 0.f) { Dirt = Forced; DirtH = 75.f; }
+	else if (bGarage || bShowcase) { Dirt = 0.f; DirtH = 40.f; }   // en el taller lo lavan
+	else if (!bPaused)
+	{
+		// las ruedas levantan barro según lo blando y mojado del suelo, la velocidad y el patinaje
+		float Soil = 0.f, Sl = 0.f;
+		for (const FWheelPhys& W : Wh) if (W.Contact && !W.bWater)
+		{
+			Soil += W.WMud + W.WDirt * (0.15f + 0.55f * W.Wet) + W.WSand * 0.25f + W.WSnow * 0.05f + W.WGrass * 0.08f * W.Wet;
+			Sl = FMath::Max(Sl, FMath::Abs(W.Slip));
+		}
+		const float V = FVector2D(Vel).Size();
+		const float Gain = 0.0016f * Soil * FMath::Min(V, 20.f) * (1.f + 2.5f * FMath::Min(Sl, 1.f));
+		Dirt = FMath::Min(1.f, Dirt + Dt * Gain * (1.1f - Dirt));
+		// cuanto más rápido y más patina, más alto salpica (hasta la cintura)
+		const float Splash = 35.f + 4.5f * FMath::Min(V, 20.f) + 30.f * FMath::Min(Sl, 1.f);
+		if (Gain > 0.f) DirtH = FMath::Min(130.f, FMath::Max(DirtH, FMath::Lerp(DirtH, Splash, FMath::Min(1.f, Dt * 0.6f))));
+		// el agua lava lo que cubre (vadear) y la lluvia, poco a poco
+		if (WaterDepthM > 0.2f) { Dirt = FMath::Max(0.f, Dirt - Dt * 0.06f * FMath::Clamp(WaterDepthM / 0.6f, 0.f, 1.f) * (0.5f + 0.1f * V)); DirtH = FMath::Max(40.f, DirtH - Dt * 8.f); }
+		Dirt = FMath::Max(0.f, Dirt - Dt * 0.0035f * RainNow);
+	}
+	if (FMath::Abs(Dirt - DirtShown) > 0.01f || FMath::Abs(DirtH - DirtHShown) > 2.f)
+	{
+		DirtShown = Dirt; DirtHShown = DirtH;
+		for (const TPair<int32, UMaterialInterface*>& KV : Mats)
+			if (UMaterialInstanceDynamic* MI = Cast<UMaterialInstanceDynamic>(KV.Value))
+			{
+				// los cristales y las luces se ensucian menos (se limpian con el limpiaparabrisas / no se ve el barro emisivo)
+				const float K = (KV.Key == SGlass) ? 0.35f : ((KV.Key == SLight || KV.Key == STail || KV.Key == SAmber) ? 0.2f : 1.f);
+				MI->SetScalarParameterValue(TEXT("Dirt"), Dirt * K); MI->SetScalarParameterValue(TEXT("DirtH"), DirtH);
+			}
+	}
+}
+
 void ADustlineCar::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -891,7 +932,7 @@ void ADustlineCar::Tick(float DeltaTime)
 			{
 				PT = 0.f; float Off = 1e9f;   // distancia a la pista
 				for (int32 k = FMath::Max(0, Seg - 2); k < FMath::Min(Path.Num() - 1, Seg + 3); ++k) { const FVector2D A = Path[k], B = Path[k + 1]; const float t = FMath::Clamp(FVector2D::DotProduct(L - A, B - A) / FMath::Max(1.f, (B - A).SizeSquared()), 0.f, 1.f); Off = FMath::Min(Off, FVector2D::Distance(L, A + (B - A) * t) / 100.f); }
-				UE_LOG(LogDustlineDrive, Display, TEXT("TT t=%.0f v=%.0f recorrido=%.0f m tramo=%d/%d fuera=%.1f m pitch=%.0f roll=%.0f max=%.0f/%.0f surf=%s up=%.2f agua=%.2f"), T, SpeedKmh, Done, Seg, Path.Num(), Off, GetActorRotation().Pitch, GetActorRotation().Roll, MaxPitch, MaxRoll, *SurfaceName, GetActorUpVector().Z, WaterDepthM);
+				UE_LOG(LogDustlineDrive, Display, TEXT("TT t=%.0f v=%.0f recorrido=%.0f m tramo=%d/%d fuera=%.1f m pitch=%.0f roll=%.0f max=%.0f/%.0f surf=%s up=%.2f agua=%.2f barro=%.2f/%.0fcm cr=%d"), T, SpeedKmh, Done, Seg, Path.Num(), Off, GetActorRotation().Pitch, GetActorRotation().Roll, MaxPitch, MaxRoll, *SurfaceName, GetActorUpVector().Z, WaterDepthM, Dirt, DirtH, DustlineCareer::Credits());
 			}
 			if (Seg >= Path.Num() - 2 && FVector2D::Distance(L, Path.Last()) < 1500.f) { UE_LOG(LogDustlineDrive, Display, TEXT("TT FIN pista completa: %.0f m en %.0f s"), Done, T); FPlatformMisc::RequestExit(false); }
 		}
@@ -931,6 +972,9 @@ void ADustlineCar::Tick(float DeltaTime)
 	// puntos de interés: se descubren al llegar (a menos de 35 m)
 	if (!bGarage && !bShowcase)
 	{
+		// modo carrera: créditos por kilómetro recorrido con las ruedas en el suelo (no cuenta derrapar parado ni volar)
+		int32 NC = 0; for (const FWheelPhys& W : Wh) NC += W.Contact ? 1 : 0;
+		if (DustlineCareer::Enabled() && NC >= 2 && !bStalled) DustlineCareer::AddDistance(FVector2D(Vel).Size() * dt);
 		TArray<DustlineWorld::FPoi>& P = DustlineWorld::Pois();
 		const FVector L = GetActorLocation();
 		for (DustlineWorld::FPoi& Pt : P)
@@ -939,6 +983,7 @@ void ADustlineCar::Tick(float DeltaTime)
 				Pt.bFound = true; DustlineWorld::SaveDiscovered();
 				int32 Nf = 0; for (const DustlineWorld::FPoi& Q : P) Nf += Q.bFound ? 1 : 0;
 				Toast = FString::Printf(TEXT("Descubierto: %s  \u00B7  %d de %d"), *Pt.Name, Nf, P.Num()); ToastT = Clock;
+				if (DustlineCareer::Enabled()) { DustlineCareer::Earn(DustlineCareer::PoiReward); Toast += TEXT("  \u00B7  +") + DustlineCareer::Fmt(DustlineCareer::PoiReward); }
 				UE_LOG(LogDustlineDrive, Display, TEXT("POI descubierto %s (%d/%d)"), *Pt.Name, Nf, P.Num());
 			}
 	}
@@ -1047,6 +1092,7 @@ void ADustlineCar::Tick(float DeltaTime)
 	}
 	else if (PC && PC->WasInputKeyJustPressed(EKeys::G)) ToggleGarage();
 	if (FParse::Param(FCommandLine::Get(), TEXT("uidemo"))) UiDemo();
+	if (FParse::Param(FCommandLine::Get(), TEXT("careertest")) && Clock > 2.f) { static bool bOnce = false; if (!bOnce) { bOnce = true; DustlineCareerSelfTest(this); FPlatformMisc::RequestExit(false); } }
 	if (FParse::Param(FCommandLine::Get(), TEXT("wheeltest"))) WheelTest();
 	if (FParse::Param(FCommandLine::Get(), TEXT("enginetest"))) EngineTest();
 	if (FParse::Param(FCommandLine::Get(), TEXT("bodytest"))) BodyTest();
@@ -1056,6 +1102,7 @@ void ADustlineCar::Tick(float DeltaTime)
 		const FVector L = GetActorLocation();
 		const FLocal Wx = WeatherAt(L.X, L.Y);
 		WeatherLabel = WeatherName(Wx); TempC = Wx.TempC;
+		UpdateDirt(dt, Wx.Rain);
 	}
 	if (bGarage || bShowcase)
 	{

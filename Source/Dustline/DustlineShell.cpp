@@ -750,5 +750,67 @@ void ADustlineCar::BuildShellV2(FDustlineMeshBuilder& B)
 		break;
 	}
 	}
+
+	// ------------------------------------------------------------------ equipamiento del taller (snorkel y baca)
+	{
+		float zMax = -1e9f; for (const FVector2D& p : D.Top) zMax = FMath::Max(zMax, (float)p.Y);
+		float xr0 = L, xr1 = 0.f; for (const FVector2D& p : D.Top) if (p.Y >= zMax - 3.f) { xr0 = FMath::Min(xr0, (float)p.X); xr1 = FMath::Max(xr1, (float)p.X); }
+		const bool bTub = St == 6;   // el crawler es una bañera abierta: no lleva ni baca ni snorkel opcional
+		if (Setup.bSnorkel && !bTub && St != 3)
+		{
+			// base del parabrisas: primer punto delante del techo donde el perfil baja hasta la cintura
+			float xW = xr1; while (xW < L - 5.f && PL(D.Top, xW) > PL(D.Sh, xW) + 1.f) xW += 1.f;
+			const float zSh = PL(D.Sh, xW);
+			auto Y = [&](float xr, float zs) { return SY(xr, zs) + 5.5f; };
+			TArray<FVector> Pth = {
+				FVector(XB(xW + 22.f), Y(xW + 22.f, zSh - 14.f) - 5.f, Z(zSh - 12.f)),
+				FVector(XB(xW + 12.f), Y(xW + 12.f, zSh - 6.f), Z(zSh - 2.f)),
+				FVector(XB(xW + 2.f), Y(xW + 2.f, zSh - 3.f), Z(zSh + 4.f)) };
+			for (int32 k = 1; k <= 4; ++k)
+			{
+				const float t = k / 4.f, xr = FMath::Lerp(xW - 2.f, xr1 + 4.f, t), zs = FMath::Lerp(zSh + 4.f, zMax - 6.f, t);
+				Pth.Add(FVector(XB(xr), FMath::Max(Y(xr, FMath::Min(zs, zMax - 8.f)), D.Half * D.RoofIn + 4.f), Z(zs)));
+			}
+			Pth.Add(FVector(XB(xr1 + 3.f), Pth.Last().Y - 1.f, Z(zMax + 4.f)));
+			B.Tube(SDark, FDustlineMeshBuilder::Smooth(Pth, 5), 4.3f, 10);
+			const FVector Hd(XB(xr1 + 5.f), Pth.Last().Y - 1.f, Z(zMax + 7.f));
+			SB(SDark, Hd, FVector(7.f, 5.5f, 4.5f), 0.45f, 8);                                            // cabeza (ciclón)
+			SB(SMetal, Hd + FVector(7.2f, 0.f, 0.f), FVector(0.6f, 4.5f, 3.5f), 0.4f, 6);                 // rejilla de entrada
+			for (float zs : { zSh + 20.f, zMax - 16.f }) SB(SMetal, FVector(XB(FMath::Lerp(xW - 2.f, xr1 + 4.f, (zs - zSh) / FMath::Max(1.f, zMax - zSh))), Pth.Last().Y - 4.f, Z(zs)), FVector(2.f, 3.f, 1.f), 0.4f, 6);   // abrazaderas
+		}
+		if (Setup.bRack && !bTub)
+		{
+			const float hw = D.Half * D.RoofIn - 6.f, zr = Z(zMax) + D.CrownH + 7.f;
+			const float xa = XB(xr0 + 10.f), xb = XB(xr1 - 8.f);
+			if (St != 3)   // el Defender ya trae baca de serie: solo se le añade la carga
+			{
+				for (int32 s = -1; s <= 1; s += 2)
+				{
+					B.Tube(SDark, { FVector(xa, s * hw, zr), FVector(xb, s * hw, zr) }, 1.6f, 8);
+					B.Tube(SDark, { FVector(xa, s * hw, zr + 9.f), FVector(xb, s * hw, zr + 9.f) }, 1.2f, 6);
+					const int32 NF = 4; for (int32 q = 0; q < NF; ++q) { const float x = FMath::Lerp(xa + 4.f, xb - 4.f, (float)q / (NF - 1)); SB(SDark, FVector(x, s * hw, zr - 4.f), FVector(2.5f, 2.5f, 4.5f), 0.4f, 6); B.Tube(SDark, { FVector(x, s * hw, zr), FVector(x, s * hw, zr + 9.f) }, 1.0f, 6); }
+				}
+				const int32 NC = FMath::Max(4, FMath::RoundToInt((xb - xa) / 30.f));
+				for (int32 q = 0; q <= NC; ++q) { const float x = FMath::Lerp(xa, xb, (float)q / NC); B.Tube(SDark, { FVector(x, -hw, zr), FVector(x, hw, zr) }, 1.1f, 6); }
+			}
+			const float zc = (St == 3 ? Z(198.f) : zr) + 1.f;
+			// rueda de repuesto tumbada, dos bidones y una caja estanca
+			B.Xf = FTransform(FRotator(0.f, 0.f, 90.f), FVector(FMath::Lerp(xa, xb, 0.35f), 0.f, zc + FMath::Min(Wd, 26.f) * 0.5f)) * Keep0;
+			DustlineAddWheel(B, FMath::Min(R, 40.f), FMath::Min(Wd, 26.f), 1, 1.f, false);
+			Reset();
+			for (int32 s = -1; s <= 1; s += 2)
+			{
+				const FVector J(xa + 14.f, s * (hw - 14.f), zc + 23.f);
+				SB(SAccent, J, FVector(12.f, 8.f, 22.f), 0.18f, 6);
+				SB(SDark, J + FVector(0.f, 0.f, 23.f), FVector(3.f, 2.f, 2.f), 0.4f, 6);
+				for (int32 k = -1; k <= 1; k += 2) B.Box(SAccent, J + FVector(0.f, s * 8.3f, k * 9.f), FVector(9.f, 0.4f, 1.2f));
+			}
+			SB(SInterior, FVector(FMath::Lerp(xa, xb, 0.72f), 0.f, zc + 13.f), FVector(22.f, hw - 12.f, 13.f), 0.15f, 6);
+			// barra de luz al frente de la baca
+			const FVector Lb(xb + 4.f, 0.f, zr + 11.f);
+			SB(SDark, Lb, FVector(4.f, hw - 6.f, 4.5f), 0.4f, 8);
+			SB(SLight, Lb + FVector(3.2f, 0.f, 0.f), FVector(1.2f, hw - 9.f, 2.6f), 0.5f, 6);
+		}
+	}
 	Reset();
 }
