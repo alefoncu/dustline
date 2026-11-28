@@ -343,9 +343,15 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 				if (C->bEscActive) Tags += TEXT("  \u00B7  ESC");
 				if (C->DamageTotal() > 0.05f) Tags += FString::Printf(TEXT("  \u00B7  Daños %.0f %%"), C->DamageTotal() * 100.f);
 				{ const FRotator R = C->GetActorRotation(); if (FMath::Abs(R.Pitch) > 8.f || FMath::Abs(R.Roll) > 8.f) Tags += FString::Printf(TEXT("  \u00B7  %s %.0f\u00B0 / lateral %.0f\u00B0"), R.Pitch > 0.f ? TEXT("Subida") : TEXT("Bajada"), FMath::Abs(R.Pitch), FMath::Abs(R.Roll)); }
-				if (C->bStalled) Tags += TEXT("  \u00B7  Motor ahogado");
+				if (C->bHydrolock) Tags += TEXT("  \u00B7  Motor hidrobloqueado (al taller)");
+				else if (C->bStalled) Tags += TEXT("  \u00B7  Motor ahogado");
+				if (C->bFloating) Tags += TEXT("  \u00B7  Flotando");
 				else if (C->WaterDepthM > 0.05f) Tags += FString::Printf(TEXT("  \u00B7  Vadeo %.0f cm"), C->WaterDepthM * 100.f);
-				else if (C->MaxSinkM() > 0.06f) Tags += FString::Printf(TEXT("  \u00B7  Hundido %.0f cm"), C->MaxSinkM() * 100.f);
+				if (C->bInWater && C->CurrentMs > 1.2f) Tags += FString::Printf(TEXT("  \u00B7  Corriente %.0f km/h"), C->CurrentMs * 3.6f);
+				if (C->bInWater && C->BowWave > 0.25f) Tags += TEXT("  \u00B7  Ola alta: más despacio");
+				if (C->WetBrakes > 0.3f) Tags += TEXT("  \u00B7  Frenos mojados");
+				if (C->TyreClog() > 0.45f) Tags += TEXT("  \u00B7  Ruedas embarradas");
+				if (C->WaterDepthM <= 0.05f && C->MaxSinkM() > 0.06f) Tags += FString::Printf(TEXT("  \u00B7  Hundido %.0f cm"), C->MaxSinkM() * 100.f);
 				return FText::FromString(FString::Printf(TEXT("%s  \u00B7  %.0f rpm%s"), *G, C->Rpm, *Tags));
 			}) ],
 		40.f, FMargin(26, 24, 26, 22));

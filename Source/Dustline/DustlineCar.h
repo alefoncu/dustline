@@ -77,6 +77,13 @@ public:
 	float WaterDepthM = 0.f;     // agua sobre el fondo de la carrocería
 	float Flood = 0.f;           // 0..1 agua dentro del habitáculo
 	float WetTyres = 0.f;        // neumáticos mojados tras vadear
+	float WetBrakes = 0.f;       // frenos mojados (frenan menos hasta que se secan frenando)
+	float BowWave = 0.f;         // altura de la ola de proa (m)
+	float CurrentMs = 0.f;       // corriente del agua bajo el coche (m/s)
+	bool bHydrolock = false;     // el motor tragó agua acelerado: no arranca hasta pasar por el taller
+	bool bFloating = false;      // las ruedas apenas apoyan: el coche flota y lo lleva la corriente
+	float EngineBayWater = 0.f;  // agua sobre el encendido (m)
+	float TyreClog() const { float C = 0.f; for (int32 i = 0; i < 4; ++i) C = FMath::Max(C, Wh[i].Clog); return C; }
 	FString WeatherLabel; float TempC = 12.f;
 	// ---- carácter de cada modelo ----
 	struct FHandling
@@ -96,7 +103,7 @@ public:
 	float SteerPull = 0.f, CamShake = 0.f, ImpactSnd = 0.f;
 	bool bHdcActive = false, bEscActive = false;
 	float DamageTotal() const { return FMath::Clamp((Damage[0] + Damage[1] + Damage[2] + Damage[3]) * 0.5f, 0.f, 1.f); }
-	void Repair() { for (float& D : Damage) D = 0.f; SteerPull = 0.f; }
+	void Repair() { for (float& D : Damage) D = 0.f; SteerPull = 0.f; bHydrolock = false; bStalled = false; WetBrakes = 0.f; for (FWheelPhys& W : Wh) W.Clog = 0.f; }
 	float MaxSinkM() const { float S = 0.f; for (int32 i = 0; i < 4; ++i) S = FMath::Max(S, Wh[i].Sink); return S; }
 	// ---- garage / menús ----
 	UFUNCTION(BlueprintCallable, Category = "Dustline") void ToggleGarage();
@@ -125,7 +132,7 @@ private:
 	FVector Vel = FVector::ZeroVector, AngVel = FVector::ZeroVector;
 	float ZCom = 100.f, ComX = 0.f, SteerAngle = 0.f, TurboSpool = 0.f, CamYaw = 0.f, Clock = 0.f, Accum = 0.f;
 	int32 CamMode = 0;
-	struct FWheelPhys { FVector CP = FVector::ZeroVector, CN = FVector::UpVector; float WMud = 0, WSnow = 0, WSand = 0, WGrav = 0, WGrass = 0, WTall = 0, WDirt = 0, WRock = 0, Wet = 0, SlipA = 0; bool bWater = false; float Length = 0.5f; float Spin = 0.f; bool Contact = false; float Omega = 0.f, Sink = 0.f, Slip = 0.f, Peak = 0.15f, Load = 0.f, Comp = 0.f; int32 Surf = 0; };
+	struct FWheelPhys { FVector CP = FVector::ZeroVector, CN = FVector::UpVector; float WMud = 0, WSnow = 0, WSand = 0, WGrav = 0, WGrass = 0, WTall = 0, WDirt = 0, WRock = 0, Wet = 0, SlipA = 0; bool bWater = false; float Length = 0.5f; float Spin = 0.f; bool Contact = false; float Omega = 0.f, Sink = 0.f, Slip = 0.f, Peak = 0.15f, Load = 0.f, Comp = 0.f; int32 Surf = 0; float Clog = 0.f, WaterD = 0.f; };
 	FWheelPhys Wh[4];
 	struct FPhysSpec
 	{
@@ -134,7 +141,7 @@ private:
 		int32 NGears; bool bDiesel, bHasLow;
 	} Sp;
 	float ShiftT = 0.f, GearHold = 0.f, Clutch = 1.f, StallT = 0.f; int32 SubStep = 0;
-	FVector2D WaterFlow = FVector2D::ZeroVector; float WaterZ = -1e9f; bool bInWater = false;
+	FVector2D WaterFlow = FVector2D::ZeroVector; float WaterZ = -1e9f; bool bInWater = false, bNearWater = false;
 	FVector BodyPlaneP[11], BodyPlaneN[11]; bool BodyPlane[11] = {};
 	// ---- sonido, partículas y rodadas (DustlineCarFx.cpp) ----
 	UPROPERTY() class UDustlineSynth* Synth = nullptr;

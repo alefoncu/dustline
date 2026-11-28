@@ -37,6 +37,8 @@ namespace DustlineWorld
 
 	/** Mezcla de superficies en un punto (pesos) + estado del clima. Tire = tipo de neumático (0 carretera,1 AT,2 barro,3 clavos,4 balón). */
 	FGround GroundAt(float Xcm, float Ycm, float Zcm, float Nz, int32 Tire);
+	/** Suelo bajo el agua: cantos con verdín si hay corriente, limo blando si está quieta; siempre empapado. */
+	void Submerge(FGround& G, float DepthM, float FlowMs, int32 Tire);
 
 	// ---- datos horneados ----
 	bool LoadData();
@@ -45,6 +47,8 @@ namespace DustlineWorld
 	FMask SampleMask(float Xcm, float Ycm);
 	/** Agua horneada (ríos, lagos y mar): nivel de la superficie (cm) y corriente (m/s). false = no hay agua aquí. */
 	bool WaterAt(float Xcm, float Ycm, float& OutLevelCm, FVector2D& OutFlow);
+	/** Solo pruebas: una charca circular de nivel y corriente fijos. */
+	void SetTestPool(float Xcm, float Ycm, float RadiusCm, float DepthCm, FVector2D Flow, TFunctionRef<float(float, float)> Ground);
 
 	// ---- clima ----
 	struct FLocal

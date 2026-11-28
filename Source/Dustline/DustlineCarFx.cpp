@@ -100,6 +100,19 @@ void ADustlineCar::EmitFx(float Dt)
 		}
 	}
 	bWasInWater = bInWater && WaterDepthM > 0.1f;
+	// ola de proa: el agua se levanta delante del parachoques y salpica a los lados
+	if (bInWater && BowWave > 0.05f && Speed > 1.f)
+	{
+		const float n = BowWave * Speed * 40.f * Dt; int32 Nb = (int32)n; if (GFxRng.FRand() < n - Nb) ++Nb;
+		const FVector C0 = GetActorLocation() + Fwd * (Sp.BodyL * 52.f);
+		for (int32 k = 0; k < Nb; ++k)
+		{
+			const float sd = GFxRng.FRandRange(-1.f, 1.f);
+			const FVector Pp = FVector(C0.X, C0.Y, WaterZ * 100.f + 5.f) + Right * (sd * Sp.BodyW * 50.f);
+			const FVector Vv = Fwd * Speed * 70.f + Right * (sd * Speed * 60.f) + FVector(0, 0, GFxRng.FRandRange(150.f, 250.f + BowWave * 600.f));
+			Spawn(Pp, Vv + VelCm * 0.3f, 0.9f, 18.f, 80.f, 9.8f, 0.8f, FLinearColor(0.80f, 0.85f, 0.90f, 0.5f));
+		}
+	}
 	for (int32 i = 0; i < 4; ++i)
 	{
 		const FWheelPhys& W = Wh[i];

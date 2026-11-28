@@ -13,6 +13,7 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformMisc.h"
 #include "UnrealClient.h"
+#include "Math/RandomStream.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDustlineDrive, Log, All);
 using namespace DustlineWorld;
@@ -138,7 +139,77 @@ void ADustlineCar::BeginPlay()
 	{ int32 T = -1; if (FParse::Value(Cmd, TEXT("dtire="), T)) Setup.TireType = FMath::Clamp(T, 0, 4); }
 	Rebuild(); LastSetup = Setup; PaintShown = Setup.Paint; bHaveLast = true;
 	// -dpos=X,Y para probar en un sitio concreto (en cm)
-	FString PosS; if (FParse::Value(Cmd, TEXT("dpos="), PosS)) { FString A, B; if (PosS.Split(TEXT(","), &A, &B)) SetActorLocation(FVector(FCString::Atof(*A), FCString::Atof(*B), 60000.f)); }
+	FString PosS; if (FParse::Value(Cmd, TEXT("dpos="), PosS, false)) { FString A, B; if (PosS.Split(TEXT(","), &A, &B)) SetActorLocation(FVector(FCString::Atof(*A), FCString::Atof(*B), 60000.f)); }
+	{ float Yaw = 0.f; if (FParse::Value(Cmd, TEXT("dyaw="), Yaw)) SetActorRotation(FRotator(0.f, Yaw, 0.f)); }
+	// -dpool=PROFUNDIDAD,CORRIENTE: charca de prueba de 18 m de radio que empieza 14 m por delante del coche; la corriente va de izquierda a derecha
+	if (FString PoolS; FParse::Value(Cmd, TEXT("dpool="), PoolS, false))
+	{
+		FString A, B; if (!PoolS.Split(TEXT(","), &A, &B)) A = PoolS;
+		const float Dp = FCString::Atof(*A), Cur = B.IsEmpty() ? 0.f : FCString::Atof(*B);
+		const FVector L = GetActorLocation(), F = GetActorForwardVector(), Rv = GetActorRightVector();
+		const FVector C = L + F * 3200.f;
+		UWorld* W = GetWorld();
+		SetTestPool(C.X, C.Y, 1800.f, Dp * 100.f, FVector2D(Rv.X, Rv.Y) * Cur, [W](float X, float Y) { FHitResult H; return W->LineTraceSingleByChannel(H, FVector(X, Y, 80000), FVector(X, Y, -20000), ECC_Visibility) ? (float)H.ImpactPoint.Z : 0.f; });
+		const float Gz = 0.f;
+		UE_LOG(LogDustlineDrive, Display, TEXT("POOL profundidad=%.2f corriente=%.2f nivel=%.0f"), Dp, Cur, Gz + Dp * 100.f);
+	}
+	// -dford=PROFUNDIDAD (m): busca un vado de esa profundidad con orillas suaves y deja el coche en la orilla mirando al otro lado
+	if (float FordD = 0.f; FParse::Value(Cmd, TEXT("dford="), FordD))
+	{
+		FRandomStream R(FordD * 1000.f + 7.f); int32 Seed = 0; FParse::Value(Cmd, TEXT("dfordseed="), Seed); R.Initialize(Seed * 7919 + (int32)(FordD * 1000.f));
+		auto Ground = [&](float X, float Y) { FHitResult H; return GetWorld()->LineTraceSingleByChannel(H, FVector(X, Y, 80000), FVector(X, Y, -20000), ECC_Visibility) ? (float)H.ImpactPoint.Z : -1e9f; };
+		float BestE = 1e9f; FVector BestP; float BestYaw = 0.f;
+		int32 NDepth = 0;
+		for (int32 k = 0; k < 200000 && BestE > 0.08f; ++k)
+		{
+			const float X = R.FRandRange(-180000.f, 180000.f), Y = R.FRandRange(-180000.f, 180000.f);
+			float Lv; FVector2D Fl; if (!WaterAt(X, Y, Lv, Fl) || Lv < 300.f) continue;   // ríos y lagos, no el mar
+			const float G0 = Ground(X, Y); const float D = (Lv - G0) / 100.f;
+			if (FMath::Abs(D - FordD) > 0.2f) continue;
+			if (FParse::Param(Cmd, TEXT("dfordlake")) && Fl.Size() > 0.1f) continue;
+			{   // fondo llano alrededor (sin cauces en V): el suelo a 4 m en cruz no cambia más de 40 cm
+				bool bFlat = true;
+				for (int32 q = 0; q < 4 && bFlat; ++q) { const float Gq = Ground(X + (q == 0 ? 400.f : q == 1 ? -400.f : 0.f), Y + (q == 2 ? 400.f : q == 3 ? -400.f : 0.f)); bFlat = FMath::Abs(Gq - G0) < 40.f; }
+				if (!bFlat) continue;
+			}
+			++NDepth;
+			{   // tramo casi llano: el nivel apenas cambia 15 m río arriba y abajo (nada de torrentes)
+				const FVector2D Fd = Fl.SizeSquared() > 0.01f ? Fl.GetSafeNormal() : FVector2D(1, 0);
+				float L1, L2; FVector2D F1, F2;
+				if ((WaterAt(X + Fd.X * 1500.f, Y + Fd.Y * 1500.f, L1, F1) && FMath::Abs(L1 - Lv) > 50.f) || (WaterAt(X - Fd.X * 1500.f, Y - Fd.Y * 1500.f, L2, F2) && FMath::Abs(L2 - Lv) > 50.f)) continue;
+				float L3, L4; const FVector2D Pd(-Fd.Y, Fd.X);
+				if (WaterAt(X + Pd.X * 600.f, Y + Pd.Y * 600.f, L3, F1) && FMath::Abs(L3 - Lv) > 25.f) continue;
+				if (WaterAt(X - Pd.X * 600.f, Y - Pd.Y * 600.f, L4, F2) && FMath::Abs(L4 - Lv) > 25.f) continue;
+			}
+			if (FParse::Param(Cmd, TEXT("dfordin")))   // dentro del agua directamente (sin mirar las orillas)
+			{
+				const FVector2D Dn = Fl.SizeSquared() > 0.01f ? FVector2D(-Fl.Y, Fl.X).GetSafeNormal() : FVector2D(1, 0);
+				const float E = FMath::Abs(D - FordD);
+				if (E < BestE) { BestE = E; BestP = FVector(X, Y, 60000.f); BestYaw = FMath::RadiansToDegrees(FMath::Atan2(Dn.Y, Dn.X)); UE_LOG(LogDustlineDrive, Display, TEXT("FORD dentro depth=%.2f flow=%.2f en %.0f,%.0f"), D, Fl.Size(), X, Y); }
+				continue;
+			}
+			FVector2D Dir = Fl.SizeSquared() > 0.01f ? FVector2D(-Fl.Y, Fl.X).GetSafeNormal() : FVector2D(FMath::Cos(R.FRand() * 6.28f), FMath::Sin(R.FRand() * 6.28f));
+			// orillas: a cada lado el suelo sale del agua en menos de 75 m sin cortados (escalones < 1,1 m cada 3 m)
+			bool bOk = true; float Rough = 0.f, DryBack = 0.f;
+			for (int32 sd = -1; sd <= 1 && bOk; sd += 2)
+			{
+				float Prev = G0; int32 Dry = -1;
+				for (int32 j = 1; j <= 25; ++j)
+				{
+					const float Gj = Ground(X + sd * Dir.X * j * 300.f, Y + sd * Dir.Y * j * 300.f);
+					if (FMath::Abs(Gj - Prev) > 70.f) { bOk = false; break; }
+					Rough += FMath::Abs(Gj - Prev); Prev = Gj;
+					if (Gj > Lv + 40.f) { Dry = j; break; }
+				}
+				if (Dry < 0) bOk = false; else if (sd < 0) DryBack = Dry * 300.f;
+			}
+			if (!bOk) continue;
+			const float E = FMath::Abs(D - FordD) + Rough / 20000.f;
+			if (E < BestE) { BestE = E; BestP = FVector(X - Dir.X * (DryBack + 900.f), Y - Dir.Y * (DryBack + 900.f), 60000.f); BestYaw = FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)); UE_LOG(LogDustlineDrive, Display, TEXT("FORD cand depth=%.2f flow=%.2f centre=%.0f,%.0f orilla=%.0f m e=%.3f"), D, Fl.Size(), X, Y, DryBack / 100.f, E); }
+		}
+		UE_LOG(LogDustlineDrive, Display, TEXT("FORD puntos con esa profundidad: %d"), NDepth);
+		if (BestE < 1e8f) SetActorLocationAndRotation(BestP, FRotator(0.f, BestYaw, 0.f));
+	}
 	FHitResult Hit; const FVector L0 = GetActorLocation();
 	if (GetWorld()->LineTraceSingleByChannel(Hit, L0 + FVector(0, 0, 3000), L0 - FVector(0, 0, 80000), ECC_Visibility))
 		SetActorLocation(FVector(L0.X, L0.Y, Hit.ImpactPoint.Z + ZCom + 25.f), false, nullptr, ETeleportType::TeleportPhysics);
@@ -158,20 +229,21 @@ void ADustlineCar::ResetUpright()
 	SetActorLocationAndRotation(FVector(L0.X, L0.Y, Z), R, false, nullptr, ETeleportType::TeleportPhysics);
 	Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
 	for (FWheelPhys& W : Wh) { W.Omega = 0.f; W.Sink = 0.f; }
-	bStalled = false; Flood = 0.f; Gear = 1;
+	bStalled = bHydrolock; Flood = 0.f; Gear = 1;
 }
 
 void ADustlineCar::UpdateWater()
 {
-	WaterZ = -1e9f; bInWater = false; WaterFlow = FVector2D::ZeroVector;
-	const FVector L = GetActorLocation();
-	float Lv; FVector2D Fl;
-	if (WaterAt(L.X, L.Y, Lv, Fl))
+	// ¿hay agua bajo alguna parte del coche? (centro y esquinas; el detalle por rueda y por columna va en cada subpaso)
+	bNearWater = false;
+	const FVector L = GetActorLocation(), Fw = GetActorForwardVector() * (Sp.BodyL * 60.f), Rt = GetActorRightVector() * (Sp.BodyW * 60.f);
+	const FVector Pts[5] = { L, L + Fw + Rt, L + Fw - Rt, L - Fw + Rt, L - Fw - Rt };
+	for (const FVector& Q : Pts)
 	{
-		WaterZ = Lv / 100.f;
-		bInWater = WaterZ > L.Z / 100.f + Sp.BodyBot - 0.9f;   // agua cerca de los bajos (también las ruedas)
-		if (bInWater) WaterFlow = Fl;
+		float Lv; FVector2D Fl;
+		if (WaterAt(Q.X, Q.Y, Lv, Fl) && Lv / 100.f > L.Z / 100.f + Sp.BodyBot - 1.2f) { bNearWater = true; break; }
 	}
+	if (!bNearWater) { WaterZ = -1e9f; bInWater = false; WaterFlow = FVector2D::ZeroVector; CurrentMs = 0.f; }
 }
 
 void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHandbrake, bool bBoost)
@@ -239,11 +311,19 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	if (Rpm > Sp.Redline) Te *= FMath::Clamp(1.f - (Rpm - Sp.Redline) / 300.f, 0.f, 1.f);
 	if (ShiftT > 0.f) Te *= 0.3f;
 	Te *= 1.f - 0.45f * FMath::Clamp(Damage[0], 0.f, 1.f);   // radiador / admisión dañados
-	// control de tracción: si alguna rueda motriz patina más allá del pico, se recorta el par del motor
+	if (!Sp.bDiesel && EngineBayWater > 0.f)   // gasolina con el encendido mojado: tirones y menos fuerza
+		Te *= 1.f - 0.55f * Smooth(0.f, 0.25f, EngineBayWater) * (0.6f + 0.4f * FMath::Abs(FMath::Sin(Clock * 11.f + SubStep * 0.37f)));
+	// control de tracción: la rueda motriz que patina sola se frena (el par pasa por el diferencial abierto a las demás);
+	// solo si patinan todas se recorta el par del motor
+	float TcB[4] = {};
 	{
-		float Worst = 0.f;
-		for (int32 i = 0; i < 4; ++i) if (Driven[i] && Wh[i].Contact) Worst = FMath::Max(Worst, Wh[i].Slip * FMath::Sign(Ratio) / FMath::Max(Wh[i].Peak, 0.05f));
-		if (bTc && thr > 0.f && Worst > 1.6f) TcCut = FMath::Max(0.05f, TcCut - dt * 5.f);
+		float Rt[4] = {}, Sum = 0.f, Best2 = 0.f; int32 Nd = 0;
+		for (int32 i = 0; i < 4; ++i) if (Driven[i] && Wh[i].Contact) { Rt[i] = Wh[i].Slip * FMath::Sign(Ratio) / FMath::Max(Wh[i].Peak, 0.05f); Sum += Rt[i]; ++Nd; }
+		const float Avg = Nd > 0 ? Sum / Nd : 0.f;
+		if (bTc && thr > 0.f)
+			for (int32 i = 0; i < 4; ++i) if (Driven[i] && Rt[i] > 1.4f && Rt[i] > Avg + 0.4f) TcB[i] = FMath::Clamp((Rt[i] - 1.2f) * 0.3f, 0.f, 0.7f);
+		for (int32 i = 0; i < 4; ++i) if (Driven[i] && TcB[i] <= 0.f) Best2 = FMath::Max(Best2, Rt[i]);
+		if (bTc && thr > 0.f && FMath::Max(Avg, Best2) > 1.6f) TcCut = FMath::Max(0.05f, TcCut - dt * 5.f);
 		else TcCut = FMath::Min(1.f, TcCut + dt * 2.f);
 		if (bTc && thr > 0.f) Te *= TcCut;
 	}
@@ -261,17 +341,28 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(DustlineWheel), false, this);
 	struct FC { bool C = false; FVector Hit, N, Rc, Wf, Lat; float Fs = 0, Comp = 0, Crr = 0; FGround G; FTire T; float Vl = 0, Vs = 0; bool bWater = false; } Cw[4];
 	const float Nnom = mass * Gr / 4.f;
+	// agua en cada rueda (nivel y corriente en su sitio: a caballo de la orilla una rueda vadea y la otra no)
+	float WLv[4]; FVector WFl[4], WAnchor[4];
+	auto WaterHere = [this](const FVector& Pm, float& Lv, FVector& Fl) -> bool
+	{
+		Lv = -1e9f; Fl = FVector::ZeroVector; if (!bNearWater) return false;
+		float L; FVector2D F; if (!WaterAt(Pm.X * 100.f, Pm.Y * 100.f, L, F)) return false;
+		Lv = L / 100.f; Fl = FVector(F.X, F.Y, 0.f); return true;
+	};
 	for (int32 i = 0; i < 4; ++i)
 	{
 		const FVector WP = WheelPos(i) / 100.0;
 		const FVector r = Q.RotateVector(FVector(WP.X - ComX, WP.Y, zA - ZCom / 100.f));
 		const FVector a = P + r;
+		WAnchor[i] = a; WaterHere(a, WLv[i], WFl[i]);
 		const FVector Start = a * 100.0 + UpB * 60.0, End = Start - UpB * ((Sp.RestLen + Sp.R) * 100.0 + 160.0);
 		FHitResult Hit;
 		if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params)) { Wh[i].Contact = false; Wh[i].Length = FMath::FInterpTo(Wh[i].Length, Sp.RestLen, dt, 8.f); Wh[i].Sink *= 1.f - dt * 2.f; continue; }
 		const FVector n = Hit.ImpactNormal.GetSafeNormal();
 		FC& c = Cw[i];
 		c.G = GroundAt(Hit.ImpactPoint.X, Hit.ImpactPoint.Y, Hit.ImpactPoint.Z, n.Z, Setup.TireType);
+		const float WdHit = WLv[i] - (float)Hit.ImpactPoint.Z / 100.f;   // agua sobre la huella
+		if (WdHit > 0.f) Submerge(c.G, WdHit, WFl[i].Size(), Setup.TireType);   // fondo del río: cantos con verdín o limo
 		const float Bump = c.G.Bump * (VNoise(Hit.ImpactPoint.X / 70.f, Hit.ImpactPoint.Y / 70.f) * 2.f - 1.f) + c.G.Bump * 0.4f * (VNoise(Hit.ImpactPoint.X / 23.f + 7.f, Hit.ImpactPoint.Y / 23.f) * 2.f - 1.f);
 		const float dist = ((Hit.Distance - 60.0) / 100.0) * FMath::Max(0.3f, (float)FVector::DotProduct(n, UpB));
 		const float L = dist - Sp.R + Wh[i].Sink - Bump;
@@ -286,7 +377,14 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		float fs = Sp.SpringK * KMul * c.Comp - Sp.SpringC * FMath::Sqrt(KMul) * vn;
 		if (L < 0.1f) fs += 6.f * Sp.SpringK * KMul * (0.1f - L);
 		c.Fs = fs;
-		c.bWater = bInWater && WaterZ > c.Hit.Z + 0.05f;
+		c.bWater = WdHit > 0.05f;
+	}
+	// profundidad del agua en cada rueda (también las que van al aire, p. ej. flotando)
+	float WDep[4];
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const float Bot = (float)(WAnchor[i] - UpB * (Wh[i].Length + Sp.R)).Z;
+		WDep[i] = FMath::Clamp(WLv[i] - Bot, 0.f, 2.f * Sp.R); Wh[i].WaterD = WDep[i];
 	}
 	// barras estabilizadoras
 	for (int32 ax = 0; ax < 2; ++ax)
@@ -297,7 +395,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	}
 
 	// ---------------- neumáticos (fase 2) + resolución implícita de las ruedas ----------------
-	float Am[4][4] = {}, Bv[4] = {}, Xw[4] = {}, Ieff[4], Fx0[4] = {}, Trr[4] = {};
+	float Am[4][4] = {}, Bv[4] = {}, Xw[4] = {}, Ieff[4], Fx0[4] = {}, Trr[4] = {}, PaddleF[4] = {}; FVector PaddleDir[4];
 	const float widthFactor = FMath::Clamp(0.85f + (Sp.Width - 0.2f) * 2.f, 0.8f, 1.3f), sinkWidth = FMath::Clamp(FMath::Sqrt(0.28f / Sp.Width), 0.7f, 1.4f);
 	for (int32 i = 0; i < 4; ++i)
 	{
@@ -316,7 +414,25 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 			const float Soft = c.G.W[SMud] + c.G.W[SSand] + c.G.W[SSnow];
 			float Mu = c.G.Mu * FMath::Lerp(1.f, widthFactor, Soft) * (1.f - 0.08f * FMath::Clamp(N / Nnom - 1.f, -0.5f, 2.f)) * (1.f - 0.12f * WetTyres);
 			float Crr = c.G.Crr;
-			if (c.bWater) { Mu *= 0.85f; Crr += 0.03f; if (FMath::Abs(c.Vl) > 8.f) Mu *= 0.6f; }
+			// vadeo rápido: la ola bajo la rueda la levanta (hidroplaneo en agua profunda); despacio el agua apenas quita agarre
+			if (c.bWater)
+			{
+				static const float PlaneTire[5] = { 1.f, 0.85f, 0.65f, 0.9f, 1.3f };
+				const float Plane = Smooth(4.f, 11.f, FMath::Abs(c.Vl)) * Smooth(0.05f, 0.35f, WDep[i]) * PlaneTire[FMath::Clamp(Setup.TireType, 0, 4)];
+				Mu *= 1.f - 0.55f * FMath::Clamp(Plane, 0.f, 1.f);
+			}
+			// neumático embotado de barro: el dibujo lleno de barro es casi un slick (el de barro se limpia solo al girar)
+			{
+				static const float ClogRate[5] = { 1.3f, 1.f, 0.45f, 1.f, 0.8f }, SelfClean[5] = { 0.4f, 0.7f, 1.6f, 0.7f, 0.8f };
+				const int32 Tt = FMath::Clamp(Setup.TireType, 0, 4);
+				const float Spin = FMath::Abs(Wh[i].Omega * Sp.R), SlipV = FMath::Abs(Wh[i].Omega * Sp.R - c.Vl);
+				float& Cg = Wh[i].Clog;
+				Cg += dt * c.G.W[SMud] * (SlipV * 0.025f + FMath::Abs(c.Vl) * 0.003f) * ClogRate[Tt] * (1.f - Cg);
+				Cg -= dt * Cg * (Spin * 0.02f * SelfClean[Tt] + (1.f - c.G.W[SMud]) * 0.04f * FMath::Min(FMath::Abs(c.Vl), 10.f) * 0.1f);
+				if (WDep[i] > 0.2f * Sp.R) Cg -= dt * Cg * (0.35f + 0.05f * Spin);   // el agua lava el dibujo
+				Cg = FMath::Clamp(Cg, 0.f, 1.f);
+				Mu *= 1.f - 0.32f * Cg * (1.f - 0.4f * c.G.W[SMud]);
+			}
 			// aquaplaning: lámina de agua en llano empapado a partir de ~50 km/h (el balón flota antes, el de barro evacua mejor)
 			{
 				static const float AquaTire[5] = { 1.f, 0.8f, 0.6f, 0.9f, 1.3f };
@@ -346,8 +462,23 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 			Wh[i].SlipA = c.Vs / FMath::Max(FMath::Abs(c.Vl), 1.f) / FMath::Max(c.G.PeakAlpha, 0.05f);
 		}
 		else { Wh[i].Load = 0.f; Trr[i] = 1.5f * Wh[i].Omega; }   // rueda al aire: rozamiento de rodamientos y frenos
-		Am[i][i] = Ieff[i] / dt + Sp.R * J;
-		Bv[i] = (Ieff[i] / dt + Sp.R * J) * Wh[i].Omega + WheelTorque * Share[i] - Sp.R * Fx0[i] - Trr[i];
+		// rueda que gira dentro del agua: el dibujo bate el agua (frena la rueda y empuja algo el coche, sobre todo flotando)
+		float Jw = 0.f;
+		PaddleF[i] = 0.f;
+		if (WDep[i] > 0.02f)
+		{
+			static const float PaddleCd[5] = { 0.25f, 0.45f, 1.f, 0.45f, 0.6f };
+			FVector wd = Fwd; if (i < 2) wd = Q.RotateVector(FVector(FMath::Cos(SteerAngle), -FMath::Sin(SteerAngle), 0));
+			const FVector Ctr = WAnchor[i] - UpB * Wh[i].Length;
+			const float Vw = FVector::DotProduct(Vel + FVector::CrossProduct(AngVel, Ctr - P) - WFl[i], wd);
+			const float kP = 0.5f * Rho * PaddleCd[FMath::Clamp(Setup.TireType, 0, 4)] * Sp.Width * WDep[i] * 0.5f;
+			const float u = Wh[i].Omega * Sp.R - Vw;
+			PaddleF[i] = kP * u * FMath::Abs(u); PaddleDir[i] = wd;
+			Trr[i] += PaddleF[i] * Sp.R;
+			Jw = 2.f * kP * FMath::Abs(u) * Sp.R * Sp.R;
+		}
+		Am[i][i] = Ieff[i] / dt + Sp.R * J + Jw;
+		Bv[i] = (Ieff[i] / dt + Sp.R * J + Jw) * Wh[i].Omega + WheelTorque * Share[i] - Sp.R * Fx0[i] - Trr[i];
 	}
 	// acoplamientos del diferencial: abierto con un poco de viscosidad, o bloqueado (casi rígido)
 	auto Couple = [&](int32 a, int32 b, float k) { Am[a][a] += k; Am[b][b] += k; Am[a][b] -= k; Am[b][a] -= k; };
@@ -374,7 +505,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	// frenos (con ABS opcional) y freno de mano: par de rozamiento que puede llegar a bloquear la rueda
 	for (int32 i = 0; i < 4; ++i)
 	{
-		float Tb = brake * Sp.BrakeT * (i < 2 ? 0.32f : 0.18f) + EscB[i] * Sp.BrakeT * 0.3f;
+		float Tb = (brake * Sp.BrakeT * (i < 2 ? 0.32f : 0.18f) + (EscB[i] + TcB[i]) * Sp.BrakeT * 0.3f) * (1.f - 0.5f * WetBrakes);   // discos mojados
 		// ABS: el par de freno no pasa de lo que el neumático puede transmitir (la rueda sigue girando cerca del pico)
 		if (bAbs && brake > 0.f && Cw[i].C && FMath::Abs(Cw[i].Vl) > 1.5f)
 		{
@@ -440,27 +571,38 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		}
 	}
 
-	// agua: flotación por columnas, arrastre con la corriente, inundación y toma de aire
-	WaterDepthM = 0.f;
-	if (bInWater)
+	// agua: flotación por columnas (cada una con su nivel y su corriente), arrastre, ola de proa, inundación y toma de aire
+	WaterDepthM = 0.f; BowWave = 0.f;
+	bool bWet = false; float TopLv = -1e9f, FlowSum = 0.f; int32 FlowN = 0; FVector2D FlowAcc = FVector2D::ZeroVector;
+	if (bNearWater)
 	{
-		const FVector Flow(WaterFlow.X, WaterFlow.Y, 0.f);
-		const float CL = Sp.BodyL / 3.f, CW = Sp.BodyW / 2.f, HBody = Sp.BodyTop - Sp.BodyBot;
-		for (int32 ix = 0; ix < 3; ++ix) for (int32 iy = 0; iy < 2; ++iy)
+		const float CL = Sp.BodyL / 3.f, CW = Sp.BodyW / 3.f, HBody = Sp.BodyTop - Sp.BodyBot;
+		// velocidad respecto al agua, en ejes del coche (para la ola de proa)
+		float Lc; FVector Fc; WaterHere(P, Lc, Fc);
+		const float vFwdW = FVector::DotProduct(Vel - Fc, Fwd);
+		for (int32 ix = 0; ix < 3; ++ix) for (int32 iy = 0; iy < 3; ++iy)
 		{
-			const FVector Lp((ix - 1) * CL - ComX, (iy - 0.5f) * CW, Sp.BodyBot);
-			const FVector Wb = P + Q.RotateVector(Lp);
-			const float h = FMath::Clamp(WaterZ - (float)Wb.Z, 0.f, HBody);
+			const FVector Lp((ix - 1) * CL - ComX, (iy - 1) * CW, Sp.BodyBot);
+			const FVector Wb = P + Q.RotateVector(Lp), Wt = P + Q.RotateVector(FVector(Lp.X, Lp.Y, Sp.BodyTop));
+			float Lv; FVector Flow; if (!WaterHere(Wb, Lv, Flow)) continue;
+			// columna de la carrocería entre los bajos y el techo (vale también volcado o de lado)
+			const FVector Lo = Wb.Z <= Wt.Z ? Wb : Wt, Hi = Wb.Z <= Wt.Z ? Wt : Wb;
+			const float Hc = FMath::Max((float)(Hi.Z - Lo.Z), 0.05f);
+			const float h = FMath::Clamp(Lv - (float)Lo.Z, 0.f, Hc);
 			if (h <= 0.f) continue;
-			WaterDepthM = FMath::Max(WaterDepthM, h);
-			const FVector Pt = Wb + FVector(0, 0, h * 0.5f), rp = Pt - P;
-			const float Vol = CL * CW * h * 0.55f * (1.f - 0.85f * Flood);
+			bWet = true; TopLv = FMath::Max(TopLv, Lv); FlowAcc += FVector2D(Flow.X, Flow.Y); ++FlowN;
+			WaterDepthM = FMath::Max(WaterDepthM, FMath::Min(h, HBody));
+			// el empuje actúa en el centro de la parte sumergida de la columna (a lo largo de su eje): al escorar se va al lado
+			// que se hunde y endereza el coche (estabilidad de flotación)
+			const FVector Pt = Lo + (Hi - Lo) * (0.5f * h / Hc), rp = Pt - P;
+			// ~42 % de la caja desplaza agua: pasos de rueda, vano motor y bajos se llenan enseguida
+			const float Vol = CL * CW * HBody * (h / Hc) * 0.42f * (1.f - 0.85f * Flood);
 			const FVector Fb(0, 0, Rho * Gr * Vol);
 			F += Fb; T += FVector::CrossProduct(rp, Fb);
 			// arrastre: de frente solo la fila de columnas que empuja el agua, de lado solo la columna del lado que avanza
 			const FVector vrel = Vel + FVector::CrossProduct(AngVel, rp) - Flow;
 			const FVector vb = Q.UnrotateVector(vrel);
-			const bool bFront = (vb.X > 0.f && ix == 2) || (vb.X < 0.f && ix == 0), bSide = (vb.Y > 0.f && iy == 1) || (vb.Y < 0.f && iy == 0);
+			const bool bFront = (vb.X > 0.f && ix == 2) || (vb.X < 0.f && ix == 0), bSide = (vb.Y > 0.f && iy == 2) || (vb.Y < 0.f && iy == 0);
 			const FVector Db(bFront ? -0.5f * Rho * 0.9f * (CW * h) * vb.X * FMath::Abs(vb.X) : -0.5f * Rho * 0.05f * (CW * h) * vb.X * FMath::Abs(vb.X),
 				bSide ? -0.5f * Rho * 1.1f * (CL * h) * vb.Y * FMath::Abs(vb.Y) : 0.f, -0.5f * Rho * 1.3f * (CL * CW) * vb.Z * FMath::Abs(vb.Z));
 			const FVector Fd = Q.RotateVector(Db);
@@ -468,24 +610,57 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 			const FVector rd(rp.X, rp.Y, rp.Z * 0.35f);
 			F += Fd; T += FVector::CrossProduct(rd, Fd);
 		}
-		// ruedas dentro del agua: arrastre de las ruedas y de los bajos
-		for (int32 i = 0; i < 4; ++i) if (Cw[i].C && Cw[i].bWater)
+		// ruedas en el agua: de canto ofrecen mucha superficie (hacen de timón al flotar), de frente poca; y el empuje del dibujo
+		for (int32 i = 0; i < 4; ++i) if (WDep[i] > 0.02f)
 		{
-			const float dW = FMath::Clamp(WaterZ - (float)Cw[i].Hit.Z, 0.f, 2.f * Sp.R);
-			const FVector vrel = Vel - Flow;
-			const FVector Fd = -vrel * (float)vrel.Size() * 0.5f * Rho * 0.8f * (Sp.Width * dW);
-			F += Fd; T += FVector::CrossProduct(Cw[i].Rc, Fd);
+			bWet = true; TopLv = FMath::Max(TopLv, WLv[i]); FlowAcc += FVector2D(WFl[i].X, WFl[i].Y); ++FlowN;
+			const FVector Ctr = WAnchor[i] - UpB * Wh[i].Length, rc = Ctr - P;
+			FVector wd = Fwd; if (i < 2) wd = Q.RotateVector(FVector(FMath::Cos(SteerAngle), -FMath::Sin(SteerAngle), 0));
+			const FVector side = FVector::CrossProduct(UpB, wd).GetSafeNormal();
+			const FVector vrel = Vel + FVector::CrossProduct(AngVel, rc) - WFl[i];
+			const float vf = FVector::DotProduct(vrel, wd), vs = FVector::DotProduct(vrel, side);
+			const FVector Fd = -wd * (0.5f * Rho * 0.8f * Sp.Width * WDep[i] * vf * FMath::Abs(vf)) - side * (0.5f * Rho * 1.0f * 1.6f * Sp.R * WDep[i] * vs * FMath::Abs(vs))
+				+ PaddleDir[i] * PaddleF[i];
+			F += Fd; T += FVector::CrossProduct(rc, Fd);
 		}
-		const float Sill = Sp.BodyBot + 0.35f;
-		const float OverSill = WaterZ - (float)(P + Q.RotateVector(FVector(0, 0, Sill))).Z;
-		if (OverSill > 0.f) Flood = FMath::Min(1.f, Flood + dt * 0.012f * FMath::Clamp(OverSill / 0.5f, 0.f, 1.f));
-		const float IntakeWZ = (float)(P + Q.RotateVector(FVector(0.3f * Sp.BodyL - ComX, 0.f, Sp.IntakeZ))).Z;
-		if (WaterZ > IntakeWZ && !bStalled) { bStalled = true; UE_LOG(LogDustlineDrive, Display, TEXT("DRIVE motor ahogado (agua %.2f > toma %.2f)"), WaterZ, IntakeWZ); }
-		if (WaterZ < IntakeWZ) StallT += dt; else StallT = 0.f;
-		WetTyres = 1.f;
+		if (bWet)
+		{
+			// ola de proa: al avanzar el agua se apila delante (~v²/2g); a paso de hombre deja un seno detrás que baja el nivel en el vano motor
+			const float vf = FMath::Max(vFwdW, 0.f);
+			const float Trough = 0.15f * Smooth(0.7f, 1.6f, vf) * (1.f - Smooth(2.4f, 3.8f, vf));
+			// la ola no puede ser más alta que el agua que empuja (agua somera): profundidad delante = la de las ruedas delanteras
+			const float DFront = FMath::Max(WDep[0], WDep[1]) + FMath::Max(0.f, WaterDepthM - Sp.R);
+			BowWave = FMath::Min3(0.6f * vf * vf / (2.f * Gr), 1.0f * DFront, 0.9f);
+			const FVector IntakeP = P + Q.RotateVector(FVector(0.3f * Sp.BodyL - ComX, 0.f, Sp.IntakeZ));
+			float LvI; FVector FlI; if (!WaterHere(IntakeP, LvI, FlI)) LvI = TopLv;
+			const float LvIntake = LvI + BowWave * 0.6f - Trough;
+			const float Sill = Sp.BodyBot + 0.35f;
+			const float OverSill = TopLv + BowWave * 0.3f - (float)(P + Q.RotateVector(FVector(0, 0, Sill))).Z;
+			if (OverSill > 0.f) Flood = FMath::Min(1.f, Flood + dt * 0.012f * FMath::Clamp(OverSill / 0.5f, 0.f, 1.f));
+			// gasolina: el agua en el encendido hace que falle antes de ahogarse (el diésel no tiene encendido)
+			const float BayZ = (float)(P + Q.RotateVector(FVector(0.35f * Sp.BodyL - ComX, 0.f, Sp.BodyBot + 0.3f * (Sp.BodyTop - Sp.BodyBot)))).Z;
+			EngineBayWater = FMath::Max(0.f, LvI + BowWave * 0.6f - Trough - BayZ);
+			const float IntakeWZ = (float)IntakeP.Z;
+			if (LvIntake > IntakeWZ && !bStalled)
+			{
+				bStalled = true;
+				// acelerado y con vueltas el motor aspira agua y se rompe (hidrobloqueo); al ralentí solo se cala
+				if (Rpm > 1800.f && thr > 0.3f) { bHydrolock = true; Damage[0] = FMath::Max(Damage[0], 0.6f); }
+				UE_LOG(LogDustlineDrive, Display, TEXT("DRIVE motor ahogado (agua %.2f > toma %.2f, ola %.2f, rpm %.0f, hidrobloqueo %d)"), LvIntake, IntakeWZ, BowWave, Rpm, bHydrolock ? 1 : 0);
+			}
+			if (LvIntake < IntakeWZ) StallT += dt; else StallT = 0.f;
+			WetTyres = 1.f;
+			for (int32 i = 0; i < 4; ++i) if (WDep[i] > Sp.R * 0.7f) WetBrakes = 1.f;   // el buje bajo el agua moja los discos
+		}
 	}
-	else { StallT += dt; Flood = FMath::Max(0.f, Flood - dt * 0.01f); WetTyres = FMath::Max(0.f, WetTyres - dt * 0.08f); }
-	if (bStalled && StallT > 2.5f) bStalled = false;
+	bInWater = bWet;
+	if (bWet) { WaterZ = TopLv; if (FlowN > 0) { WaterFlow = FlowAcc / FlowN; CurrentMs = WaterFlow.Size(); } }
+	else { WaterZ = -1e9f; WaterFlow = FVector2D::ZeroVector; CurrentMs = 0.f; EngineBayWater = 0.f; StallT += dt; Flood = FMath::Max(0.f, Flood - dt * 0.01f); WetTyres = FMath::Max(0.f, WetTyres - dt * 0.08f); }
+	// los discos se secan con el calor de frenar (y muy poco con el aire)
+	WetBrakes = FMath::Max(0.f, WetBrakes - dt * (0.006f + 0.22f * brake * Smooth(1.f, 8.f, Vel.Size())));
+	// flota si las ruedas apenas cargan peso y hay agua bajo el coche
+	{ float Ld = 0.f; for (int32 i = 0; i < 4; ++i) Ld += Wh[i].Contact ? Wh[i].Load : 0.f; bFloating = bWet && WaterDepthM > 0.2f && Ld < 0.2f * mass * Gr; }
+	if (bStalled && !bHydrolock && StallT > 2.5f) bStalled = false;
 
 	// aire, gravedad e integración
 	F += -Vel * Vel.Size() * 0.5f * 1.2f * Sp.CdA;
@@ -613,6 +788,21 @@ void ADustlineCar::Tick(float DeltaTime)
 			GetActorRotation().Roll, *SurfaceName, Wh[0].Slip, Wh[2].Slip, Wh[0].Contact, Wh[1].Contact, Wh[2].Contact, Wh[3].Contact); }
 		if (T > 22.f) FPlatformMisc::RequestExit(false);
 	}
+	else if (float WtKmh = 0.f; FParse::Value(FCommandLine::Get(), TEXT("watertest="), WtKmh))
+	{
+		// prueba de vadeo: recto a velocidad fija (control de crucero sencillo) cruzando el agua; registra lo que pasa
+		const float T = Clock - 2.f;
+		if (T > 0.f) Throttle = FMath::Clamp((WtKmh - SpeedKmh) * 0.15f, 0.f, 1.f);
+		static float PT = 0.f; PT += dt;
+		if (PT > 0.5f && T > 0.f)
+		{
+			PT = 0.f; float Ld = 0.f; for (int32 i = 0; i < 4; ++i) Ld += Wh[i].Contact ? Wh[i].Load : 0.f;
+			UE_LOG(LogDustlineDrive, Display, TEXT("WT t=%.1f v=%.1f thr=%.2f surf=%s depth=%.2f wd=%.2f/%.2f bow=%.2f cur=%.2f flood=%.2f stall=%d hydro=%d float=%d load=%.2f wbrk=%.2f clog=%.2f bay=%.2f rpm=%.0f gear=%d yaw=%.0f up=%.2f slip=%.2f/%.2f/%.2f/%.2f sink=%.2f tc=%.2f loc=%s"),
+				T, SpeedKmh, Throttle, *SurfaceName, WaterDepthM, Wh[0].WaterD, Wh[2].WaterD, BowWave, CurrentMs, Flood, bStalled ? 1 : 0, bHydrolock ? 1 : 0, bFloating ? 1 : 0, Ld / (Sp.Mass * 9.81f), WetBrakes, TyreClog(), EngineBayWater, Rpm, Gear,
+				GetActorRotation().Yaw, GetActorUpVector().Z, Wh[0].Slip, Wh[1].Slip, Wh[2].Slip, Wh[3].Slip, MaxSinkM(), TcCut, *GetActorLocation().ToString());
+		}
+		if (T > 28.f) FPlatformMisc::RequestExit(false);
+	}
 	else if (bAutoDrive) { Throttle = 1.f; Steer = 0.55f * FMath::Sin(Clock * 0.45f); Boost = Clock > 3.f; }
 	else if (PC && !bPaused && !bShowcase && !bGarage && !(Menu.IsValid() && Menu->IsOpen()))
 	{
@@ -643,7 +833,7 @@ void ADustlineCar::Tick(float DeltaTime)
 		else if (Step == 6 && Clock > 31.f) { FPlatformMisc::RequestExit(false); }
 	}
 	Cam->FieldOfView = Set.Fov;
-	const bool bDemoRun = bAutoDrive || bPhysTest || FParse::Param(FCommandLine::Get(), TEXT("garagedemo")) || FParse::Param(FCommandLine::Get(), TEXT("nomenu")) || FParse::Value(FCommandLine::Get(), TEXT("dshot="), Shot0);
+	const bool bDemoRun = bAutoDrive || bPhysTest || FParse::Param(FCommandLine::Get(), TEXT("garagedemo")) || FParse::Param(FCommandLine::Get(), TEXT("nomenu")) || FCString::Strifind(FCommandLine::Get(), TEXT("watertest=")) || FParse::Value(FCommandLine::Get(), TEXT("dshot="), Shot0);
 	if (!bMenuStarted && Clock > 0.3f && PC) { bMenuStarted = true; Menu = MakeShared<FDustlineMenu>(this); Menu->Start(!bDemoRun); }
 	if (PC && Menu.IsValid())
 	{

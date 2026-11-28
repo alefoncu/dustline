@@ -94,9 +94,26 @@ FMask SampleMask(float X, float Y)
 	return M;
 }
 
+static struct { bool bOn = false; float X = 0, Y = 0, R = 0, Depth = 0; FVector2D Flow; TArray<float> G; int32 N = 0; } GPool;
+void SetTestPool(float X, float Y, float R, float DepthCm, FVector2D InFlow, TFunctionRef<float(float, float)> Ground)
+{
+	GPool.bOn = true; GPool.X = X; GPool.Y = Y; GPool.R = R; GPool.Depth = DepthCm; GPool.Flow = InFlow;
+	GPool.N = FMath::CeilToInt(2.f * R / 100.f) + 1; GPool.G.SetNumUninitialized(GPool.N * GPool.N);
+	for (int32 j = 0; j < GPool.N; ++j) for (int32 i = 0; i < GPool.N; ++i) GPool.G[j * GPool.N + i] = Ground(X - R + i * 100.f, Y - R + j * 100.f);
+}
+
 bool WaterAt(float X, float Y, float& OutLevel, FVector2D& OutFlow)
 {
 	OutLevel = -1e9f; OutFlow = FVector2D::ZeroVector;
+	if (GPool.bOn && FVector2D::DistSquared(FVector2D(X, Y), FVector2D(GPool.X, GPool.Y)) < GPool.R * GPool.R)
+	{   // charca de prueba: profundidad fija sobre el terreno (superficie que sigue al suelo, solo para medir)
+		const float Fx = (X - GPool.X + GPool.R) / 100.f, Fy = (Y - GPool.Y + GPool.R) / 100.f;
+		const int32 I = FMath::Clamp(FMath::FloorToInt(Fx), 0, GPool.N - 2), J = FMath::Clamp(FMath::FloorToInt(Fy), 0, GPool.N - 2);
+		const float U = FMath::Clamp(Fx - I, 0.f, 1.f), V = FMath::Clamp(Fy - J, 0.f, 1.f);
+		const float* G = GPool.G.GetData(); const int32 N = GPool.N;
+		OutLevel = FMath::Lerp(FMath::Lerp(G[J * N + I], G[J * N + I + 1], U), FMath::Lerp(G[(J + 1) * N + I], G[(J + 1) * N + I + 1], U), V) + GPool.Depth;
+		OutFlow = GPool.Flow; return true;
+	}
 	if (!LoadData()) return false;
 	const float Fx = (X + DataHalf) / (2.f * DataHalf) * FlowN - 0.5f, Fy = (Y + DataHalf) / (2.f * DataHalf) * FlowN - 0.5f;
 	const int32 X0 = FMath::Clamp(FMath::FloorToInt(Fx), 0, FlowN - 1), Y0 = FMath::Clamp(FMath::FloorToInt(Fy), 0, FlowN - 1);
@@ -115,6 +132,28 @@ bool WaterAt(float X, float Y, float& OutLevel, FVector2D& OutFlow)
 	if (WSum < 0.15f) return false;   // en la orilla: solo cuenta si hay agua alrededor de verdad
 	OutLevel = L / WSum; OutFlow = FVector2D(Vx, Vy) / WSum;
 	return true;
+}
+
+namespace
+{
+	/** Propiedades físicas a partir de los pesos G.W (para el neumático T y la humedad Wet). */
+	void Mix(FGround& G, int32 T, float Wet)
+	{
+		float Best = -1.f; G.Mu = G.PeakSlip = G.PeakAlpha = G.Falloff = G.Crr = G.Sink = G.Dig = G.Bump = G.Drag = 0.f;
+		for (int32 k = 0; k < SNum; ++k)
+		{
+			const float w = G.W[k]; if (w <= 1e-4f) continue;
+			if (w > Best) { Best = w; G.Dominant = k; }
+			const FProps& P = GProps[k];
+			G.Mu += w * FMath::Lerp(P.Mu, P.MuWet, Wet) * GTireMu[T][k];
+			G.PeakSlip += w * P.Peak; G.PeakAlpha += w * P.Alpha; G.Falloff += w * P.Fall;
+			G.Crr += w * FMath::Lerp(P.Crr, P.CrrWet, Wet) * ((T == 4 && k == SSand) ? 0.5f : 1.f);
+			G.Sink += w * FMath::Lerp(P.Sink, P.SinkWet, Wet) * GTireSink[T];
+			G.Dig += w * P.Dig * GTireDig[T];
+			G.Bump += w * P.Bump; G.Drag += w * P.Drag;
+		}
+		G.Wet = Wet;
+	}
 }
 
 // ---------------- mezcla de superficies (idéntica a la del material M_Terrain) ----------------
@@ -139,20 +178,7 @@ FGround GroundAt(float X, float Y, float Z, float Nz, int32 Tire)
 	const float g = W[SGrass]; W[STallGrass] = g * M.TallGrass; W[SGrass] = g - W[STallGrass];
 
 	const int32 T = FMath::Clamp(Tire, 0, 4);
-	const float Wet = Wx.Wet;
-	float Best = -1.f; G.Mu = G.PeakSlip = G.PeakAlpha = G.Falloff = G.Crr = G.Sink = G.Dig = G.Bump = G.Drag = 0.f;
-	for (int32 k = 0; k < SNum; ++k)
-	{
-		const float w = W[k]; if (w <= 1e-4f) continue;
-		if (w > Best) { Best = w; G.Dominant = k; }
-		const FProps& P = GProps[k];
-		G.Mu += w * FMath::Lerp(P.Mu, P.MuWet, Wet) * GTireMu[T][k];
-		G.PeakSlip += w * P.Peak; G.PeakAlpha += w * P.Alpha; G.Falloff += w * P.Fall;
-		G.Crr += w * FMath::Lerp(P.Crr, P.CrrWet, Wet) * ((T == 4 && k == SSand) ? 0.5f : 1.f);
-		G.Sink += w * FMath::Lerp(P.Sink, P.SinkWet, Wet) * GTireSink[T];
-		G.Dig += w * P.Dig * GTireDig[T];
-		G.Bump += w * P.Bump; G.Drag += w * P.Drag;
-	}
+	Mix(G, T, Wx.Wet);
 	// nieve: cuanto más profunda, más se hunde y más frena (y la nieve húmeda/pesada frena más)
 	if (W[SSnow] > 0.f)
 	{
@@ -163,8 +189,34 @@ FGround GroundAt(float X, float Y, float Z, float Nz, int32 Tire)
 		// nieve muy fría y polvo: aún menos agarre; cerca de 0 °C, nieve húmeda algo mejor
 		G.Mu *= FMath::Lerp(1.f, 0.9f, Smooth(-2.f, -12.f, Wx.TempC) * W[SSnow]);
 	}
-	G.Wet = Wet; G.SnowM = Wx.SnowM; G.TempC = Wx.TempC;
+	G.SnowM = Wx.SnowM; G.TempC = Wx.TempC;
 	return G;
+}
+
+// ---------------- lecho de ríos y lagos ----------------
+void Submerge(FGround& G, float DepthM, float FlowMs, int32 Tire)
+{
+	if (DepthM <= 0.f) return;
+	const int32 T = FMath::Clamp(Tire, 0, 4);
+	const float A = Smooth(0.f, 0.12f, DepthM);   // en la lámina de la orilla todavía manda el suelo de fuera
+	float* W = G.W;
+	auto Layer = [W](int32 K, float X) { for (int32 i = 0; i < SNum; ++i) W[i] *= (1.f - X); W[K] += X; };
+	// bajo el agua no hay nieve ni hierba seca: lo que hubiera pasa a ser fondo
+	const float Gone = (W[SSnow] + W[SIce] + W[STallGrass] + W[SGrass] * 0.7f) * A;
+	W[SSnow] *= 1.f - A; W[SIce] *= 1.f - A; W[STallGrass] *= 1.f - A; W[SGrass] *= 1.f - 0.7f * A; W[SDirt] += Gone;
+	// corriente viva: cantos rodados y grava lavada; agua quieta: limo blando que se traga la rueda
+	const float Fast = Smooth(0.35f, 1.4f, FlowMs), Still = 1.f - Smooth(0.15f, 0.7f, FlowMs);
+	const float Silt = Still * Smooth(0.25f, 0.9f, DepthM);   // el limo se deposita en el agua quieta y honda; la orilla es tierra mojada
+	Layer(SMud, A * Silt * 0.5f);
+	Layer(SGravel, A * Fast * 0.7f);
+	Layer(SRock, A * Fast * Smooth(1.2f, 2.5f, FlowMs) * 0.4f);
+	Mix(G, T, 1.f);
+	// las piedras del cauce tienen verdín (resbalan) y el limo hunde más
+	const float Stones = W[SGravel] + W[SRock];
+	G.Mu *= 1.f - A * 0.22f * Stones * (T == 3 ? 0.5f : 1.f);
+	G.Sink += A * Silt * 0.03f * GTireSink[T];
+	G.Bump += A * Fast * 0.012f;
+	G.SnowM = 0.f;
 }
 
 // ---------------- clima ----------------
