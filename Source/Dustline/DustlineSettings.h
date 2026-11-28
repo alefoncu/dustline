@@ -15,6 +15,7 @@ struct FDustlineSettings
 	UPROPERTY() bool bManual = false;      // cambio manual (Q/E)
 	UPROPERTY() bool bAbs = true;
 	UPROPERTY() bool bTc = true;           // control de tracción
+	UPROPERTY() float Volume = 80.f;       // % volumen general
 
 	static FDustlineSettings& Get();
 	void Load();

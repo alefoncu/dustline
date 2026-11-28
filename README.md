@@ -17,6 +17,9 @@ Juego de conducción **off-road de mundo abierto** para macOS, hecho con Unreal 
 - **Agua**: ríos excavados en el terreno a partir del caudal real de la erosión, lagos en el fondo de las cuencas y el mar; flotación por columnas, arrastre con la corriente, inundación del habitáculo y motor ahogado si la toma de aire queda bajo el agua.
 - **Clima vivo, no seleccionable**: frentes de lluvia y nieve que cruzan el mapa con el viento, más fríos en la montaña y el norte, más secos en el este; el suelo se moja (barro y charcos), se seca, se cubre de nieve o se hiela celda a celda, y eso cambia el agarre.
 
+- **Sonido procedural** (sin grabaciones): motor por armónicos de encendido según rpm, carga y cilindros (con golpeteo diésel), turbo y válvula de descarga, rodadura y suelo (grava, barro, nieve), derrapes, agua, lluvia y viento. Volumen en Ajustes → Juego.
+- **Salpicaduras, terrones de barro, nieve en polvo y polvo** según la rueda y el suelo, y **rodadas** con la huella de los tacos que se van borrando.
+
 ## Controles
 
 `W/S` acelerar y frenar (parado, `S` mete la marcha atrás) · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `B` bloqueo de diferenciales · `L` reductora · `E/Q` subir/bajar marcha (cambio manual) · `R` enderezar · `C` cámara · `G` garaje · `Esc` pausa y menú.
@@ -48,7 +51,7 @@ tools/ship.sh "mensaje"         # commit + push + empaquetar + instalar en /Appl
 
 ## Estado
 
-Prototipo en desarrollo. Pendiente: sonido de motor, salpicaduras y rodadas visibles, carrocerías más realistas. Rendimiento medido: ~28 fps en un Mac de 8 GB.
+Prototipo en desarrollo. Pendiente: carrocerías más realistas. Rendimiento medido: ~28 fps en un Mac de 8 GB.
 
 ## Licencia
 

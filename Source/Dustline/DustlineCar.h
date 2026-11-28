@@ -106,7 +106,7 @@ private:
 	FVector Vel = FVector::ZeroVector, AngVel = FVector::ZeroVector;
 	float ZCom = 100.f, SteerAngle = 0.f, TurboSpool = 0.f, CamYaw = 0.f, Clock = 0.f, Accum = 0.f;
 	int32 CamMode = 0;
-	struct FWheelPhys { float Length = 0.5f; float Spin = 0.f; bool Contact = false; float Omega = 0.f, Sink = 0.f, Slip = 0.f, Peak = 0.15f, Load = 0.f, Comp = 0.f; int32 Surf = 0; };
+	struct FWheelPhys { FVector CP = FVector::ZeroVector, CN = FVector::UpVector; float WMud = 0, WSnow = 0, WSand = 0, WGrav = 0, WGrass = 0, WTall = 0, WDirt = 0, WRock = 0, Wet = 0, SlipA = 0; bool bWater = false; float Length = 0.5f; float Spin = 0.f; bool Contact = false; float Omega = 0.f, Sink = 0.f, Slip = 0.f, Peak = 0.15f, Load = 0.f, Comp = 0.f; int32 Surf = 0; };
 	FWheelPhys Wh[4];
 	struct FPhysSpec
 	{
@@ -117,6 +117,23 @@ private:
 	float ShiftT = 0.f, GearHold = 0.f, Clutch = 1.f, StallT = 0.f; int32 SubStep = 0;
 	FVector2D WaterFlow = FVector2D::ZeroVector; float WaterZ = -1e9f; bool bInWater = false;
 	FVector BodyPlaneP[11], BodyPlaneN[11]; bool BodyPlane[11] = {};
+	// ---- sonido, partículas y rodadas (DustlineCarFx.cpp) ----
+	UPROPERTY() class UDustlineSynth* Synth = nullptr;
+	UPROPERTY() UProceduralMeshComponent* FxMesh = nullptr;
+	UPROPERTY() UProceduralMeshComponent* RutMesh = nullptr;
+	UPROPERTY() class UMaterialInstanceDynamic* FxMat = nullptr;
+	struct FFxPart { FVector P, V; float Age, Life, S0, S1, Grav, Drag; FLinearColor C; };
+	TArray<FFxPart> Parts;
+	struct FRutPt { FVector P, N, Dir; float W, A; FLinearColor C; double T; bool bStart; };
+	TArray<FRutPt> Ruts[4]; float RutT = 0.f; bool bRutDirty = false;
+	float LastThr = 0.f, PrevThr = 0.f; bool bWasInWater = false;
+	TArray<int16> AudioDump; TSharedPtr<class FDustlineSoundGen> DumpGen;
+	void InitFx();
+	void UpdateFx(float Dt);
+	void EmitFx(float Dt);
+	void UpdateRuts(float Dt);
+	void UpdateSound(float Dt);
+	void WriteAudioDump();
 	void ComputeSpec();
 	void StepPhysics(float Dt, float Throttle, float Steer, bool bHandbrake, bool bBoost);
 	void UpdateWater();

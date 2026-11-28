@@ -639,6 +639,7 @@ int32 UDustlineTerrainLibrary::BakeWorldData(UObject* WorldContextObject, UMater
 	// ---- 1. máscara 2048² (R tierra, G barro, B hierba alta, A grava) ----
 	const int32 M = 2048;
 	TArray<uint8> RGBA; RGBA.SetNumUninitialized(M * M * 4);
+	FCriticalSection StatLock; int32 StatN = 0, StatA = 0, StatS = 0, StatH = 0, StatSl = 0, StatD = 0, StatEdge = 0, StatEdgeD = 0;
 	ParallelFor(M, [&](int32 py)
 	{
 		for (int32 px = 0; px < M; ++px)
@@ -654,19 +655,27 @@ int32 UDustlineTerrainLibrary::BakeWorldData(UObject* WorldContextObject, UMater
 			const float nA = Fbm(X / 6000.f, Y / 6000.f, 4, S + 11), nB = Fbm(X / 3500.f + 31.f, Y / 3500.f - 7.f, 4, S + 23);
 			const float nC = Fbm(X / 9000.f - 5.f, Y / 9000.f + 13.f, 4, S + 37), nD = Fbm(X / 2200.f + 3.f, Y / 2200.f + 9.f, 3, S + 51);
 			// tierra: claros de suelo desnudo, laderas medias de suelo fino, el este seco y la alta montaña pelada
-			float Dirt = Sm(0.60f, 0.72f, nA) + 0.3f * Sm(0.16f, 0.26f, Slope) + 0.3f * Sm(0.5f, 0.95f, East) * Sm(0.52f, 0.66f, nD) + 0.4f * Sm(23000.f, 27000.f, Z);
+			// las laderas bajas y medias conservan la hierba; el suelo desnudo es de claros, del este seco y de las laderas altas
+			float Dirt = 0.9f * Sm(0.60f, 0.72f, nA) + 0.35f * Sm(0.16f, 0.26f, Slope) * Sm(12000.f, 20000.f, Z) + 0.3f * Sm(0.5f, 0.95f, East) * Sm(0.55f, 0.68f, nD) + 0.25f * Sm(23000.f, 28000.f, Z);
 			// barro permanente: vegas junto al agua y hondonadas bajas
 			float Mud = Sm(22.f, 5.f, Wd) * Flat * Sm(0.42f, 0.55f, nB) * (Wd > 0.f ? 1.f : 0.f) + Sm(0.62f, 0.72f, nB) * Sm(5000.f, 1500.f, Z) * Flat;
 			// hierba alta: praderas llanas de media altura, más en el oeste húmedo
 			float Tall = Sm(0.40f, 0.54f, nC) * Sm(0.82f, 0.93f, Nz) * Sm(300.f, 1200.f, Z) * (1.f - Sm(19000.f, 23000.f, Z)) * (0.7f + 0.3f * (1.f - East));
 			// grava: lechos y orillas de río, pedreras al pie de las paredes de roca, manchas en la montaña
 			float Grav = Sm(7.f, 1.5f, Wd) + 0.8f * Sm(0.14f, 0.24f, Slope) * Sm(14000.f, 21000.f, Z) + 0.6f * Sm(0.64f, 0.74f, nD) * Sm(12000.f, 18000.f, Z);
+			if ((px & 7) == 0 && (py & 7) == 0)
+			{
+				FScopeLock L(&StatLock);
+				++StatN; if (Sm(0.60f, 0.72f, nA) > 0.3f) ++StatA; if (0.3f * Sm(0.16f, 0.26f, Slope) > 0.15f) ++StatS; if (Z > 23000.f) ++StatH; if (Slope > 0.16f) ++StatSl; if (Dirt > 0.3f) ++StatD;
+				if (FMath::Abs(X) > Half * 0.83f || FMath::Abs(Y) > Half * 0.83f) { ++StatEdge; if (Dirt > 0.3f) ++StatEdgeD; }
+			}
 			Dirt = FMath::Clamp(Dirt, 0.f, 1.f); Mud = FMath::Clamp(Mud, 0.f, 1.f); Grav = FMath::Clamp(Grav, 0.f, 1.f);
 			Tall = FMath::Clamp(Tall * (1.f - 0.7f * Dirt) * (1.f - 0.6f * Mud) * (1.f - 0.8f * Grav), 0.f, 1.f);
 			uint8* P = &RGBA[(py * M + px) * 4];
 			P[0] = (uint8)FMath::RoundToInt(Dirt * 255.f); P[1] = (uint8)FMath::RoundToInt(Mud * 255.f); P[2] = (uint8)FMath::RoundToInt(Tall * 255.f); P[3] = (uint8)FMath::RoundToInt(Grav * 255.f);
 		}
 	});
+	UE_LOG(LogDustlineTerrain, Display, TEXT("MASKSTAT n=%d noise=%.2f slopeTerm=%.2f high=%.2f slope>0.16=%.2f dirt=%.2f edge=%.2f edgeDirt=%.2f"), StatN, StatA / (float)StatN, StatS / (float)StatN, StatH / (float)StatN, StatSl / (float)StatN, StatD / (float)StatN, StatEdge / (float)StatN, StatEdgeD / FMath::Max(1.f, (float)StatEdge));
 	{
 		TArray<uint8> BGRA; BGRA.SetNumUninitialized(M * M * 4);
 		for (int32 i = 0; i < M * M; ++i) { BGRA[i * 4 + 0] = RGBA[i * 4 + 2]; BGRA[i * 4 + 1] = RGBA[i * 4 + 1]; BGRA[i * 4 + 2] = RGBA[i * 4 + 0]; BGRA[i * 4 + 3] = RGBA[i * 4 + 3]; }

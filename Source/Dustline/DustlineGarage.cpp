@@ -391,6 +391,7 @@ void ADustlineCar::ExitShowcase()
 
 void ADustlineCar::EndPlay(const EEndPlayReason::Type Reason)
 {
+	WriteAudioDump();
 	if (Menu.IsValid()) { Menu->Shutdown(); Menu.Reset(); }
 	if (GEngine && GEngine->GameViewport && GarageWidget.IsValid()) GEngine->GameViewport->RemoveViewportWidgetContent(GarageWidget.ToSharedRef());
 	GarageWidget.Reset();

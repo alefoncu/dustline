@@ -233,6 +233,8 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 			Row(TEXT("ABS"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bAbs; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bAbs = B; S.Save(); })), TEXT("Sin ABS las ruedas se bloquean al frenar fuerte y el coche desliza")),
 			Row(TEXT("Control de tracción"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bTc; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bTc = B; S.Save(); })), TEXT("Sin él, a fondo en barro o nieve las ruedas patinan y el coche se entierra")) }));
 		Add(SNew(SBox).Padding(FMargin(20, 12, 20, 0))[ Text(TEXT("El clima no se elige: cambia solo y depende de la zona del mapa. Frentes de lluvia y nieve cruzan con el viento, la montaña es más fría y el suelo se moja, se embarra, se hiela o se cubre de nieve poco a poco."), 15.f, Label2()) ]);
+		Add(Section(TEXT("Sonido")));
+		Add(Group({ SliderRow(TEXT("Volumen"), 0.f, 100.f, [&S]() { return S.Volume; }, [&S](float V2) { S.Volume = V2; }, [](float V2) { return FString::Printf(TEXT("%.0f %%"), V2); }, FSimpleDelegate(), FSimpleDelegate::CreateLambda([&S]() { S.Save(); }), 5.f) }));
 		Add(Section(TEXT("Interfaz")));
 		Add(Group({
 			Row(TEXT("Mostrar velocímetro"), SNew(SToggle).IsOn_Lambda([&S]() { return S.bHUD; }).OnToggled(FOnBooleanValueChanged::CreateLambda([&S](bool B) { S.bHUD = B; S.Save(); }))),

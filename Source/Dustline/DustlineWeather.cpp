@@ -126,7 +126,7 @@ void ADustlineWeather::MakeLayers()
 		M->SetScalarParameterValue(TEXT("SpeedV"), D.Fall / D.TileH * TilesV / TilesV);
 		M->SetScalarParameterValue(TEXT("SpeedU"), D.SpeedU);
 		M->SetScalarParameterValue(TEXT("Opacity"), 0.f);
-		M->SetVectorParameterValue(TEXT("Tint"), l < 3 ? FLinearColor(0.30f, 0.33f, 0.37f) : FLinearColor(0.9f, 0.92f, 0.95f));
+		M->SetVectorParameterValue(TEXT("Tint"), l < 3 ? FLinearColor(0.42f, 0.46f, 0.52f) : FLinearColor(0.9f, 0.92f, 0.95f));
 		P->SetMaterial(0, M);
 		P->SetVisibility(false);
 		PrecipLayers.Add(P); LayerMats.Add(M);

@@ -16,7 +16,7 @@ def imp(name, linear=False, mips=True):
     if linear: tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_VECTOR_DISPLACEMENTMAP)
     if not mips: tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
     EAL.save_loaded_asset(tex); return tex
-rain = imp("T_Rain"); snow = imp("T_Snow"); imp("T_WeatherDefault", linear=True, mips=False)
+rain = imp("T_Rain"); snow = imp("T_Snow"); imp("T_WeatherDefault", linear=True, mips=False); puff = imp("T_Puff"); rut = imp("T_Rut")
 
 def new_mat(path, name):
     if EAL.does_asset_exist(path + "/" + name): EAL.delete_asset(path + "/" + name)
@@ -27,6 +27,7 @@ m = new_mat("/Game/Weather", "M_Precip")
 m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
 m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
 m.set_editor_property("two_sided", True)
+m.set_editor_property("use_translucency_vertex_fog", False)   # la niebla no se "come" la lluvia que cae delante de la cámara
 def N(mat, cls, x=0, y=0): return mel.create_material_expression(mat, cls, x, y)
 def P(mat, name, v):
     n = N(mat, unreal.MaterialExpressionScalarParameter); n.set_editor_property("parameter_name", name); n.set_editor_property("default_value", v); return n
@@ -75,6 +76,34 @@ off = N(g, unreal.MaterialExpressionMultiply); mel.connect_material_expressions(
 mel.connect_material_property(off, "", unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
 g.set_editor_property("used_with_instanced_static_meshes", True)
 mel.recompile_material(g); EAL.save_loaded_asset(g)
+
+# ---- M_Fx: partículas (salpicaduras, barro, nieve, polvo): color y opacidad por vértice ----
+fx = new_mat("/Game/Weather", "M_Fx")
+fx.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
+fx.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+fx.set_editor_property("two_sided", True)
+fvc = N(fx, unreal.MaterialExpressionVertexColor)
+ft = N(fx, unreal.MaterialExpressionTextureSample); ft.set_editor_property("texture", puff); ft.set_editor_property("sampler_type", unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+mel.connect_material_expressions(N(fx, unreal.MaterialExpressionTextureCoordinate), "", ft, "Coordinates")
+fe = N(fx, unreal.MaterialExpressionMultiply); mel.connect_material_expressions(fvc, "", fe, "A"); mel.connect_material_expressions(P(fx, "Light", 1.0), "", fe, "B")
+mel.connect_material_property(fe, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+fo = N(fx, unreal.MaterialExpressionMultiply); mel.connect_material_expressions(ft, "R", fo, "A"); mel.connect_material_expressions(fvc, "A", fo, "B")
+mel.connect_material_property(fo, "", unreal.MaterialProperty.MP_OPACITY)
+mel.recompile_material(fx); EAL.save_loaded_asset(fx)
+
+# ---- M_Rut: rodadas, modulan (oscurecen) el suelo con la huella de los tacos ----
+ru = new_mat("/Game/Weather", "M_Rut")
+ru.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MODULATE)
+ru.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+ru.set_editor_property("use_translucency_vertex_fog", False)
+rvc = N(ru, unreal.MaterialExpressionVertexColor)
+rt = N(ru, unreal.MaterialExpressionTextureSample); rt.set_editor_property("texture", rut); rt.set_editor_property("sampler_type", unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+mel.connect_material_expressions(N(ru, unreal.MaterialExpressionTextureCoordinate), "", rt, "Coordinates")
+ra = N(ru, unreal.MaterialExpressionMultiply); mel.connect_material_expressions(rt, "R", ra, "A"); mel.connect_material_expressions(rvc, "A", ra, "B")
+one = N(ru, unreal.MaterialExpressionConstant3Vector); one.set_editor_property("constant", unreal.LinearColor(1, 1, 1, 1))
+rl = N(ru, unreal.MaterialExpressionLinearInterpolate); mel.connect_material_expressions(one, "", rl, "A"); mel.connect_material_expressions(rvc, "", rl, "B"); mel.connect_material_expressions(ra, "", rl, "Alpha")
+mel.connect_material_property(rl, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+mel.recompile_material(ru); EAL.save_loaded_asset(ru)
 
 for k, (seed, h, blades) in enumerate([(11, 85.0, 30), (23, 105.0, 26), (37, 65.0, 34)]):
     p = "/Game/Vegetation/Grass/SM_TallGrass_%d" % k

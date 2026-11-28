@@ -143,6 +143,7 @@ void ADustlineCar::BeginPlay()
 	Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
 	for (FWheelPhys& W : Wh) { W.Omega = 0.f; W.Sink = 0.f; }
 	Gear = 1; Rpm = Sp.Idle;
+	InitFx();
 	UE_LOG(LogDustlineDrive, Display, TEXT("DRIVE_START model=%d mass=%.0f hp=%.0f tpeak=%.0f r1=%.1f rtop=%.1f autodrive=%d loc=%s"), Setup.Model, Sp.Mass, Sp.HP, Sp.TPeak, Sp.Gears[0], Sp.Gears[Sp.NGears - 1], bAutoDrive ? 1 : 0, *GetActorLocation().ToString());
 }
 
@@ -323,6 +324,10 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 			float Fx1, Fy1, K1; TireForce(c.T, N, Wh[i].Omega + 0.05f, Sp.R, c.Vl, c.Vs, Fx1, Fy1, K1);
 			J = FMath::Max(0.f, (Fx1 - Fx0[i]) / 0.05f);
 			Wh[i].Load = N; Wh[i].Surf = c.bWater ? -1 : c.G.Dominant;
+			Wh[i].CP = c.Hit * 100.0; Wh[i].CN = c.N; Wh[i].bWater = c.bWater; Wh[i].Wet = c.G.Wet;
+			Wh[i].WMud = c.G.W[SMud]; Wh[i].WSnow = c.G.W[SSnow]; Wh[i].WSand = c.G.W[SSand]; Wh[i].WGrav = c.G.W[SGravel];
+			Wh[i].WGrass = c.G.W[SGrass]; Wh[i].WTall = c.G.W[STallGrass]; Wh[i].WDirt = c.G.W[SDirt]; Wh[i].WRock = c.G.W[SRock] + c.G.W[SIce];
+			Wh[i].SlipA = c.Vs / FMath::Max(FMath::Abs(c.Vl), 1.f) / FMath::Max(c.G.PeakAlpha, 0.05f);
 		}
 		else { Wh[i].Load = 0.f; Trr[i] = 1.5f * Wh[i].Omega; }   // rueda al aire: rozamiento de rodamientos y frenos
 		Am[i][i] = Ieff[i] / dt + Sp.R * J;
@@ -601,6 +606,8 @@ void ADustlineCar::Tick(float DeltaTime)
 		UpdateCamera(dt);
 	}
 	SpeedKmh = Vel.Size() * 3.6f;
+	PrevThr = LastThr; LastThr = Gear < 0 ? FMath::Max(-Throttle, 0.f) : FMath::Max(Throttle, 0.f);
+	UpdateFx(dt);
 	LogT += dt; FpsAcc += DeltaTime; ++FpsN;
 	if (LogT > 2.f)
 	{
