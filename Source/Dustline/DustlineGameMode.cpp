@@ -19,7 +19,9 @@ void ADustlineGameMode::BeginPlay()
 	// Árboles/rocas: asegura que el árbol de instancias está construido (si no, la colisión existe pero el render tarda en aparecer)
 	for (TObjectIterator<UHierarchicalInstancedStaticMeshComponent> It; It; ++It)
 		if (It->GetWorld() == W) It->BuildTreeIfOutdated(true, true);
-	int32 NW = 0; for (TActorIterator<AActor> It(W); It; ++It) if (It->ActorHasTag(TEXT("DustlineWater"))) ++NW;
+	// el agua (mar y ríos) no tiene colisión: la física lee el nivel de world.bin (antes el coche se posaba sobre el mar)
+	int32 NW = 0;
+	for (TActorIterator<AActor> It(W); It; ++It) if (It->ActorHasTag(TEXT("DustlineWater"))) { ++NW; It->SetActorEnableCollision(false); }
 	UE_LOG(LogTemp, Display, TEXT("DUSTLINE water actors=%d data=%d"), NW, DustlineWorld::LoadData() ? 1 : 0);
 	W->SpawnActor<ADustlineWeather>();
 	W->SpawnActor<ADustlineGrass>();

@@ -27,7 +27,25 @@ land.set_editor_property("landscape_material", mat)
 land.set_editor_property("use_dynamic_material_instance", True)   # el clima cambia parámetros del material en juego
 loc = DTL.find_spawn_location(world)
 print("BW_SPAWN", loc)
-ela.spawn_actor_from_class(unreal.PlayerStart, loc)
+yaw = DTL.get_spawn_yaw()
+print("BW_SPAWN_YAW", yaw)
+ela.spawn_actor_from_class(unreal.PlayerStart, loc, unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw))
+# follaje de los abetos: verde oscuro y algo variado (antes se veía gris, como cartón)
+mel = unreal.MaterialEditingLibrary
+for mi_path, col in (("/Game/Vegetation/fir_sapling/MI_fir_sapling_twigs", (0.07, 0.17, 0.05)), ("/Game/Vegetation/fir_sapling_medium/MI_fir_sapling_medium_twigs", (0.06, 0.15, 0.045))):
+    mi = unreal.EditorAssetLibrary.load_asset(mi_path)
+    if mi:
+        par = mi.get_editor_property("parent")
+        names = mel.get_vector_parameter_names(par) if par else []
+        ok = mel.set_material_instance_vector_parameter_value(mi, "Tint", unreal.LinearColor(col[0], col[1], col[2], 1.0))
+        if not ok:   # sin anulación previa: se añade a mano
+            v = unreal.VectorParameterValue(); pi = unreal.MaterialParameterInfo(); pi.set_editor_property("name", "Tint")
+            v.set_editor_property("parameter_info", pi); v.set_editor_property("parameter_value", unreal.LinearColor(col[0], col[1], col[2], 1.0))
+            vals = list(mi.get_editor_property("vector_parameter_values")); vals.append(v); mi.set_editor_property("vector_parameter_values", vals)
+            mel.update_material_instance(mi); ok = "manual"
+        print("BW_TINT_PARAMS", names)
+        print("BW_TINT", mi_path, "parent", par.get_path_name() if par else None, "ok", ok)
+        unreal.EditorAssetLibrary.save_loaded_asset(mi)
 
 # ---------- 2. light / atmosphere ----------
 sun = ela.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(0, 0, 100000), unreal.Rotator(0, -38, 35))

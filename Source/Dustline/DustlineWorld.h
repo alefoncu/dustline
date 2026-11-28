@@ -47,6 +47,14 @@ namespace DustlineWorld
 	FMask SampleMask(float Xcm, float Ycm);
 	/** Agua horneada (ríos, lagos y mar): nivel de la superficie (cm) y corriente (m/s). false = no hay agua aquí. */
 	bool WaterAt(float Xcm, float Ycm, float& OutLevelCm, FVector2D& OutFlow);
+	// ---- puntos de interés y mapa (los genera el horneado del mundo en Content/Data) ----
+	struct FPoi { FString Name; int32 Kind = 0; FVector P = FVector::ZeroVector; bool bFound = false; };
+	TArray<FPoi>& Pois();                 // se cargan la primera vez (pois.txt) con lo ya descubierto (Saved)
+	void SaveDiscovered();
+	const TCHAR* PoiKindName(int32 Kind);
+	class UTexture2D* MapTexture();       // map.png (relieve, agua y pistas), cargado una vez
+	float MapHalfCm();                    // mitad del lado del mapa en cm (el mapa cubre [-Half, Half])
+
 	/** Solo pruebas: una charca circular de nivel y corriente fijos. */
 	void SetTestPool(float Xcm, float Ycm, float RadiusCm, float DepthCm, FVector2D Flow, TFunctionRef<float(float, float)> Ground);
 

@@ -15,11 +15,96 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/App.h"
+#include "DustlineWorld.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/SLeafWidget.h"
+#include "Rendering/DrawElements.h"
+#include "Styling/CoreStyle.h"
+#include "Engine/Texture2D.h"
+#include "Camera/PlayerCameraManager.h"
 
 using namespace DUI;
 
 static APlayerController* PCOf(ADustlineCar* C) { return C && C->GetWorld() ? C->GetWorld()->GetFirstPlayerController() : nullptr; }
-static const TCHAR* kVersion = TEXT("0.2");
+static const TCHAR* kVersion = TEXT("0.3");
+
+// ------------------------------------------------------------------ brújula y mapa
+namespace
+{
+	/** Ángulo (grados, + a la derecha) del punto P visto desde el coche, respecto a hacia dónde mira la cámara. */
+	float RelAngle(ADustlineCar* C, const FVector& P)
+	{
+		APlayerController* PC = PCOf(C); if (!C || !PC || !PC->PlayerCameraManager) return 0.f;
+		const FVector D = P - C->GetActorLocation();
+		return FMath::FindDeltaAngleDegrees(PC->PlayerCameraManager->GetCameraRotation().Yaw, FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)));
+	}
+	const DustlineWorld::FPoi* NextPoi(ADustlineCar* C)
+	{
+		if (!C) return nullptr;
+		const DustlineWorld::FPoi* Best = nullptr; float Bd = 1e30f;
+		for (const DustlineWorld::FPoi& P : DustlineWorld::Pois()) if (!P.bFound) { const float D = FVector2D::DistSquared(FVector2D(C->GetActorLocation()), FVector2D(P.P)); if (D < Bd) { Bd = D; Best = &P; } }
+		return Best;
+	}
+	/** Flecha que apunta en una dirección (0 = arriba, + a la derecha). */
+	class SDirArrow : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SDirArrow) {}
+			SLATE_ATTRIBUTE(float, Angle)
+			SLATE_ARGUMENT(FLinearColor, Color)
+		SLATE_END_ARGS()
+		void Construct(const FArguments& A) { Angle = A._Angle; Color = A._Color; }
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(34, 34); }
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+		{
+			const float R = FMath::DegreesToRadians(Angle.Get());
+			const FVector2D Cn = G.GetLocalSize() * 0.5f;
+			auto Rot = [&](float x, float y) { return Cn + FVector2D(x * FMath::Cos(R) - y * FMath::Sin(R), x * FMath::Sin(R) + y * FMath::Cos(R)); };
+			TArray<FVector2D> L = { Rot(0, -14), Rot(10, 11), Rot(0, 5), Rot(-10, 11), Rot(0, -14) };
+			FSlateDrawElement::MakeLines(Out, Layer, G.ToPaintGeometry(), L, ESlateDrawEffect::None, Color, true, 3.5f);
+			return Layer + 1;
+		}
+	private:
+		TAttribute<float> Angle; FLinearColor Color;
+	};
+	/** Marcas del mapa: puntos de interés y el coche, sobre la imagen del mapa. */
+	class SMapMarks : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SMapMarks) {}
+			SLATE_ARGUMENT(ADustlineCar*, Car)
+		SLATE_END_ARGS()
+		void Construct(const FArguments& A) { Car = A._Car; }
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(820, 820); }
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& G, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer, const FWidgetStyle&, bool) const override
+		{
+			ADustlineCar* C = Car.Get(); if (!C) return Layer;
+			const float Half = DustlineWorld::MapHalfCm(); const FVector2D Sz = G.GetLocalSize();
+			auto ToMap = [&](const FVector& P) { return FVector2D((P.X + Half) / (2.f * Half) * Sz.X, (P.Y + Half) / (2.f * Half) * Sz.Y); };
+			const FSlateBrush* White = FCoreStyle::Get().GetBrush("WhiteBrush");
+			const FSlateFontInfo F = Font(15.f, 1);
+			for (const DustlineWorld::FPoi& P : DustlineWorld::Pois())
+			{
+				const FVector2D M = ToMap(P.P);
+				const FLinearColor Cc = P.bFound ? FLinearColor(1.f, 0.78f, 0.25f) : FLinearColor(1.f, 1.f, 1.f, 0.9f);
+				FSlateDrawElement::MakeBox(Out, Layer, G.ToPaintGeometry(FVector2D(14, 14), FSlateLayoutTransform(M - FVector2D(7, 7))), White, ESlateDrawEffect::None, FLinearColor(0, 0, 0, 0.6f));
+				FSlateDrawElement::MakeBox(Out, Layer + 1, G.ToPaintGeometry(FVector2D(10, 10), FSlateLayoutTransform(M - FVector2D(5, 5))), White, ESlateDrawEffect::None, Cc);
+				const FString Label = P.bFound ? P.Name : FString::Printf(TEXT("%s ?"), DustlineWorld::PoiKindName(P.Kind));
+				FSlateDrawElement::MakeText(Out, Layer + 2, G.ToPaintGeometry(FVector2D(300, 24), FSlateLayoutTransform(M + FVector2D(12, -9))), Label, F, ESlateDrawEffect::None, FLinearColor(0, 0, 0, 0.8f));
+				FSlateDrawElement::MakeText(Out, Layer + 3, G.ToPaintGeometry(FVector2D(300, 24), FSlateLayoutTransform(M + FVector2D(11, -10))), Label, F, ESlateDrawEffect::None, Cc);
+			}
+			const FVector2D Cm = ToMap(C->GetActorLocation());
+			const float R = FMath::DegreesToRadians(C->GetActorRotation().Yaw);
+			auto Rot = [&](float fwd, float side) { return Cm + FVector2D(fwd * FMath::Cos(R) - side * FMath::Sin(R), fwd * FMath::Sin(R) + side * FMath::Cos(R)); };
+			TArray<FVector2D> L = { Rot(14, 0), Rot(-9, 8), Rot(-4, 0), Rot(-9, -8), Rot(14, 0) };
+			FSlateDrawElement::MakeLines(Out, Layer + 4, G.ToPaintGeometry(), L, ESlateDrawEffect::None, FLinearColor(0, 0, 0, 0.7f), true, 6.f);
+			FSlateDrawElement::MakeLines(Out, Layer + 5, G.ToPaintGeometry(), L, ESlateDrawEffect::None, FLinearColor(0.25f, 0.6f, 1.f), true, 3.f);
+			return Layer + 6;
+		}
+	private:
+		TWeakObjectPtr<ADustlineCar> Car;
+	};
+}
 
 void FDustlineMenu::SetUIMode(bool bUI)
 {
@@ -247,7 +332,12 @@ TSharedRef<SWidget> FDustlineMenu::BuildPage(int32 P)
 		Add(Group({ Row(TEXT("Acelerar / frenar y marcha atrás"), Keys({ TEXT("W"), TEXT("S") })), Row(TEXT("Girar"), Keys({ TEXT("A"), TEXT("D") })), Row(TEXT("Freno de mano"), Keys({ TEXT("Espacio") })),
 			Row(TEXT("Turbo"), Keys({ TEXT("Shift") })), Row(TEXT("Enderezar el coche"), Keys({ TEXT("R") })) }));
 		Add(Section(TEXT("Juego")));
-		Add(Group({ Row(TEXT("Cambiar de cámara"), Keys({ TEXT("C") })), Row(TEXT("Bloquear diferenciales"), Keys({ TEXT("B") })), Row(TEXT("Reductora (parado o muy despacio)"), Keys({ TEXT("L") })), Row(TEXT("Cambio manual: subir / bajar"), Keys({ TEXT("E"), TEXT("Q") })), Row(TEXT("Taller"), Keys({ TEXT("G") })), Row(TEXT("Pausa y menú"), Keys({ TEXT("Esc") })) }));
+		Add(Group({ Row(TEXT("Cambiar de cámara"), Keys({ TEXT("C") })), Row(TEXT("Bloquear diferenciales"), Keys({ TEXT("B") })), Row(TEXT("Reductora (parado o muy despacio)"), Keys({ TEXT("L") })), Row(TEXT("Cambio manual: subir / bajar"), Keys({ TEXT("E"), TEXT("Q") })), Row(TEXT("Taller"), Keys({ TEXT("G") })), Row(TEXT("Mapa"), Keys({ TEXT("M") })), Row(TEXT("Pausa y menú"), Keys({ TEXT("Esc") })) }));
+			Add(Section(TEXT("Mando")));
+			Add(Group({ Row(TEXT("Acelerar / frenar y marcha atrás"), Keys({ TEXT("RT"), TEXT("LT") }), TEXT("Gatillos analógicos: se dosifica el gas")), Row(TEXT("Girar"), Keys({ TEXT("Stick izq.") })),
+				Row(TEXT("Freno de mano / turbo"), Keys({ TEXT("A"), TEXT("X") })), Row(TEXT("Cámara / bloqueos"), Keys({ TEXT("Y"), TEXT("B") })),
+				Row(TEXT("Mapa / reductora / taller"), Keys({ TEXT("Cruceta \u2191"), TEXT("\u2193"), TEXT("\u2192") })), Row(TEXT("Cambio manual"), Keys({ TEXT("LB"), TEXT("RB") })),
+				Row(TEXT("Enderezar / pausa"), Keys({ TEXT("View"), TEXT("Menu") })) }));
 	}
 	else // Acerca de
 	{
@@ -332,27 +422,28 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 				return FText::FromString(FString::Printf(TEXT("%s  \u00B7  %s %.0f\u00B0"), *C->SurfaceName, *C->WeatherLabel, C->TempC));
 			}) ]
 		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6, 0, 0)
-		[ SNew(STextBlock).Font(Font(18.f, 1)).ColorAndOpacity(Label()).Text_Lambda([C]()
+		[ SNew(STextBlock).Font(Font(18.f, 1)).Justification(ETextJustify::Center).ColorAndOpacity(Label()).Text_Lambda([C]()
 			{
 				if (!C) return FText();
 				const FString G = C->Gear < 0 ? TEXT("R") : (C->Gear == 0 ? TEXT("N") : FString::FromInt(C->Gear));
+				// avisos por prioridad (lo urgente primero); como mucho 4, en dos líneas, para que no crezca sin límite
+				TArray<FString> T;
+				if (C->bOverturned) T.Add(TEXT("Volcado: pulsa R"));
+				if (C->bHydrolock) T.Add(TEXT("Motor hidrobloqueado (al taller)")); else if (C->bStalled) T.Add(TEXT("Motor ahogado"));
+				if (C->bFloating) T.Add(TEXT("Flotando")); else if (C->WaterDepthM > 0.05f) T.Add(FString::Printf(TEXT("Vadeo %.0f cm"), C->WaterDepthM * 100.f));
+				if (C->bInWater && C->BowWave > 0.25f) T.Add(TEXT("Ola alta: más despacio"));
+				if (C->bInWater && C->CurrentMs > 1.2f) T.Add(FString::Printf(TEXT("Corriente %.0f km/h"), C->CurrentMs * 3.6f));
+				if (C->WaterDepthM <= 0.05f && C->MaxSinkM() > 0.06f) T.Add(FString::Printf(TEXT("Hundido %.0f cm"), C->MaxSinkM() * 100.f));
+				if (C->WetBrakes > 0.3f) T.Add(TEXT("Frenos mojados"));
+				if (C->TyreClog() > 0.45f) T.Add(TEXT("Ruedas embarradas"));
+				if (C->DamageTotal() > 0.05f) T.Add(FString::Printf(TEXT("Daños %.0f %%"), C->DamageTotal() * 100.f));
+				if (C->bLowRange) T.Add(TEXT("4L"));
+				if (C->bDiffLock) T.Add(TEXT("Bloqueo"));
+				if (C->bHdcActive) T.Add(TEXT("Descenso"));
+				if (C->bEscActive) T.Add(TEXT("ESC"));
+				{ const FRotator R = C->GetActorRotation(); if (!C->bOverturned && (FMath::Abs(R.Pitch) > 8.f || FMath::Abs(R.Roll) > 8.f)) T.Add(FString::Printf(TEXT("%s %.0f\u00B0 / lateral %.0f\u00B0"), R.Pitch > 0.f ? TEXT("Subida") : TEXT("Bajada"), FMath::Abs(R.Pitch), FMath::Abs(R.Roll))); }
 				FString Tags;
-				if (C->bLowRange) Tags += TEXT("  \u00B7  4L");
-				if (C->bDiffLock) Tags += TEXT("  \u00B7  Bloqueo");
-				if (C->bHdcActive) Tags += TEXT("  \u00B7  Descenso");
-				if (C->bEscActive) Tags += TEXT("  \u00B7  ESC");
-				if (C->DamageTotal() > 0.05f) Tags += FString::Printf(TEXT("  \u00B7  Daños %.0f %%"), C->DamageTotal() * 100.f);
-				{ const FRotator R = C->GetActorRotation(); if (FMath::Abs(R.Pitch) > 8.f || FMath::Abs(R.Roll) > 8.f) Tags += FString::Printf(TEXT("  \u00B7  %s %.0f\u00B0 / lateral %.0f\u00B0"), R.Pitch > 0.f ? TEXT("Subida") : TEXT("Bajada"), FMath::Abs(R.Pitch), FMath::Abs(R.Roll)); }
-				if (C->bOverturned) Tags += TEXT("  \u00B7  Volcado: pulsa R");
-				if (C->bHydrolock) Tags += TEXT("  \u00B7  Motor hidrobloqueado (al taller)");
-				else if (C->bStalled) Tags += TEXT("  \u00B7  Motor ahogado");
-				if (C->bFloating) Tags += TEXT("  \u00B7  Flotando");
-				else if (C->WaterDepthM > 0.05f) Tags += FString::Printf(TEXT("  \u00B7  Vadeo %.0f cm"), C->WaterDepthM * 100.f);
-				if (C->bInWater && C->CurrentMs > 1.2f) Tags += FString::Printf(TEXT("  \u00B7  Corriente %.0f km/h"), C->CurrentMs * 3.6f);
-				if (C->bInWater && C->BowWave > 0.25f) Tags += TEXT("  \u00B7  Ola alta: más despacio");
-				if (C->WetBrakes > 0.3f) Tags += TEXT("  \u00B7  Frenos mojados");
-				if (C->TyreClog() > 0.45f) Tags += TEXT("  \u00B7  Ruedas embarradas");
-				if (C->WaterDepthM <= 0.05f && C->MaxSinkM() > 0.06f) Tags += FString::Printf(TEXT("  \u00B7  Hundido %.0f cm"), C->MaxSinkM() * 100.f);
+				for (int32 k = 0; k < FMath::Min(4, T.Num()); ++k) Tags += (k == 2 ? FString(TEXT("\n")) : FString(TEXT("  \u00B7  "))) + T[k];
 				return FText::FromString(FString::Printf(TEXT("%s  \u00B7  %.0f rpm%s"), *G, C->Rpm, *Tags));
 			}) ],
 		40.f, FMargin(26, 24, 26, 22));
@@ -368,11 +459,46 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 	TSharedRef<SWidget> Hints = SNew(SBorder).BorderImage(Box(DUI::Clear(), 0.f))
 		.ColorAndOpacity_Lambda([Weak, S]() { auto M = Weak.Pin(); if (!M.IsValid() || !S->bHints) return FLinearColor(1, 1, 1, 0); const float T = (float)(FPlatformTime::Seconds() - M->DriveStart); return FLinearColor(1, 1, 1, FMath::Clamp(1.f - (T - 9.f) / 2.f, 0.f, 1.f) * FMath::Clamp(T / 0.6f, 0.f, 1.f)); })
 		[ Glass(SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("Esc"), TEXT("Pausa")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("G"), TEXT("Taller")) ]
-			+ SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("C"), TEXT("Cámara")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("R"), TEXT("Enderezar")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("Shift"), TEXT("Turbo")) ], 26.f, FMargin(20, 11, 0, 11)) ];
+			+ SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("C"), TEXT("Cámara")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("R"), TEXT("Enderezar")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("M"), TEXT("Mapa")) ], 26.f, FMargin(20, 11, 0, 11)) ];
+
+	// destino: el punto de interés sin descubrir más cercano, con flecha y distancia
+	TSharedRef<SWidget> Goal = SNew(SBox).Visibility_Lambda([C]() { return NextPoi(C) ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
+		[ Glass(SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ SNew(SDirArrow).Color(Accent()).Angle_Lambda([C]() { const DustlineWorld::FPoi* P = NextPoi(C); return P ? RelAngle(C, P->P) : 0.f; }) ]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12, 0, 0, 0)[ SNew(STextBlock).Font(Font(19.f, 1)).ColorAndOpacity(Label()).Text_Lambda([C]()
+				{ const DustlineWorld::FPoi* P = NextPoi(C); if (!P || !C) return FText(); const float D = FVector2D::Distance(FVector2D(C->GetActorLocation()), FVector2D(P->P)) / 100.f;
+				  return FText::FromString(FString::Printf(TEXT("%s ?  \u00B7  %s"), DustlineWorld::PoiKindName(P->Kind), D > 1000.f ? *FString::Printf(TEXT("%.1f km"), D / 1000.f) : *FString::Printf(TEXT("%.0f m"), D))); }) ]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(16, 0, 0, 0)[ SNew(STextBlock).Font(Font(16.f)).ColorAndOpacity(Label2()).Text_Lambda([]()
+				{ int32 F = 0; for (const DustlineWorld::FPoi& P : DustlineWorld::Pois()) F += P.bFound ? 1 : 0; return FText::FromString(FString::Printf(TEXT("%d/%d  \u00B7  M mapa"), F, DustlineWorld::Pois().Num())); }) ],
+			26.f, FMargin(18, 9, 22, 9)) ];
+	TSharedRef<SWidget> ToastW = SNew(SBorder).BorderImage(Box(DUI::Clear(), 0.f))
+		.ColorAndOpacity_Lambda([C]() { if (!C) return FLinearColor(1, 1, 1, 0); const float T = C->Clock - C->ToastT; return FLinearColor(1, 1, 1, FMath::Clamp(T / 0.3f, 0.f, 1.f) * FMath::Clamp((4.5f - T) / 0.8f, 0.f, 1.f)); })
+		[ Glass(SNew(STextBlock).Font(Font(24.f, 1)).ColorAndOpacity(Label()).Text_Lambda([C]() { return FText::FromString(C ? C->Toast : FString()); }), 26.f, FMargin(26, 14)) ];
+	// mapa a pantalla completa (M): relieve, agua y pistas, puntos de interés y el coche
+	static FSlateBrush MapBrush;
+	if (UTexture2D* Tex = DustlineWorld::MapTexture()) { MapBrush.SetResourceObject(Tex); MapBrush.ImageSize = FVector2D(820, 820); MapBrush.DrawAs = ESlateBrushDrawType::Image; }
+	TSharedRef<SWidget> MapW = SNew(SBox).Visibility_Lambda([C]() { return C && C->bMapOpen && DustlineWorld::MapTexture() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
+		[ SNew(SOverlay)
+			+ SOverlay::Slot()[ SNew(SBorder).BorderImage(Box(Col(0, 0, 0, 0.45f), 0.f)) ]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[ Glass(SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().Padding(4, 0, 4, 14)
+				[ SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[ Text(TEXT("Mapa"), 32.f, Label(), 1) ]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ Text(TEXT("Pistas en ocre  \u00B7  dorado: descubierto  \u00B7  M o Esc para cerrar"), 16.f, Label2()) ] ]
+				+ SVerticalBox::Slot().AutoHeight()
+				[ SNew(SBox).WidthOverride(820.f).HeightOverride(820.f)
+					[ SNew(SOverlay)
+						+ SOverlay::Slot()[ SNew(SImage).Image(&MapBrush) ]
+						+ SOverlay::Slot()[ SNew(SMapMarks).Car(C) ] ] ],
+				30.f, FMargin(26, 20, 26, 26)) ] ];
 
 	return SNew(SBox).Visibility_Lambda([Driving, S]() { return Driving() && S->bHUD ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
 		[ SNew(SOverlay)
 			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(0, 0, 48, 48)[ SpeedCard ]
 			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(48, 44, 0, 0)[ Chip ]
-			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 48)[ Hints ] ];
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 44, 0, 0)[ Goal ]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 120, 0, 0)[ ToastW ]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 48)[ Hints ]
+			+ SOverlay::Slot()[ MapW ] ];
 }

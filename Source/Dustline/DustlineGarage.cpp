@@ -267,7 +267,7 @@ TSharedRef<SWidget> ADustlineCar::BuildGarageWidget()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 14)[ Header ]
 					+ SVerticalBox::Slot().AutoHeight()[ Stats ]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0, 18, 0, 12)[ TabGrid ]
-					+ SVerticalBox::Slot().FillHeight(1.f)[ SNew(SScrollBox).ScrollBarVisibility(EVisibility::Collapsed) + SScrollBox::Slot()[ SNew(SVerticalBox) + SVerticalBox::Slot().AutoHeight()[ Holder->ToSharedRef() ] + SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 24)[ Footer ] ] ], 34.f, FMargin(28, 26, 28, 0)) ] ] ];
+					+ SVerticalBox::Slot().FillHeight(1.f)[ SNew(SScrollBox).ScrollBarVisibility(EVisibility::Visible).ScrollBarAlwaysVisible(true).ScrollBarThickness(FVector2f(5.f, 5.f)) + SScrollBox::Slot()[ SNew(SVerticalBox) + SVerticalBox::Slot().AutoHeight()[ Holder->ToSharedRef() ] + SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 24)[ Footer ] ] ], 34.f, FMargin(28, 26, 28, 0)) ] ] ];
 }
 
 void ADustlineCar::OpenGarage(TFunction<void()> OnClose)

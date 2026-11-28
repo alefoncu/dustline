@@ -45,4 +45,8 @@ public:
 	/** Finds a gentle (low slope) spot, above water, closest to the centre. Returns Z=-1e9 if none found. */
 	UFUNCTION(BlueprintCallable, Category = "Dustline|Terrain", meta = (WorldContext = "WorldContextObject"))
 	static FVector FindSpawnLocation(UObject* WorldContextObject);
+
+	/** Hacia dónde mirar al salir (la primera pista desde el campamento), en grados. */
+	UFUNCTION(BlueprintCallable, Category = "Dustline|Terrain")
+	static float GetSpawnYaw();
 };

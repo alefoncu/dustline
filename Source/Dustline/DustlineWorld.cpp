@@ -2,6 +2,8 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Math/RandomStream.h"
+#include "ImageUtils.h"
+#include "Engine/Texture2D.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDustlineWorld, Log, All);
 
@@ -94,6 +96,48 @@ FMask SampleMask(float X, float Y)
 	return M;
 }
 
+// ---------------- puntos de interés y mapa ----------------
+static TArray<FPoi> GPoiList; static bool bPoiTried = false;
+static FString DiscoveredPath() { return FPaths::ProjectSavedDir() / TEXT("Garage") / TEXT("discovered.txt"); }
+TArray<FPoi>& Pois()
+{
+	if (bPoiTried) return GPoiList;
+	bPoiTried = true;
+	TArray<FString> Lines;
+	if (!FFileHelper::LoadFileToStringArray(Lines, *(FPaths::ProjectContentDir() / TEXT("Data") / TEXT("pois.txt")))) { UE_LOG(LogDustlineWorld, Warning, TEXT("Sin puntos de interés (pois.txt)")); return GPoiList; }
+	TArray<FString> Found; FFileHelper::LoadFileToStringArray(Found, *DiscoveredPath());
+	for (const FString& L : Lines)
+	{
+		TArray<FString> F; L.ParseIntoArray(F, TEXT(";"), false);
+		if (F.Num() < 5) continue;
+		FPoi P; P.Name = F[0]; P.Kind = FCString::Atoi(*F[1]); P.P = FVector(FCString::Atof(*F[2]), FCString::Atof(*F[3]), FCString::Atof(*F[4]));
+		P.bFound = Found.Contains(P.Name);
+		GPoiList.Add(P);
+	}
+	UE_LOG(LogDustlineWorld, Display, TEXT("Puntos de interés: %d"), GPoiList.Num());
+	return GPoiList;
+}
+void SaveDiscovered()
+{
+	FString T; for (const FPoi& P : GPoiList) if (P.bFound) T += P.Name + TEXT("\n");
+	FFileHelper::SaveStringToFile(T, *DiscoveredPath(), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+}
+const TCHAR* PoiKindName(int32 K)
+{
+	static const TCHAR* Names[] = { TEXT("Campamento"), TEXT("Mirador"), TEXT("Lago"), TEXT("Río"), TEXT("Valle") };
+	return Names[FMath::Clamp(K, 0, 4)];
+}
+static UTexture2D* GMapTex = nullptr; static bool bMapTried = false;
+UTexture2D* MapTexture()
+{
+	if (bMapTried) return GMapTex;
+	bMapTried = true;
+	GMapTex = FImageUtils::ImportFileAsTexture2D(FPaths::ProjectContentDir() / TEXT("Data") / TEXT("map.png"));
+	if (GMapTex) GMapTex->AddToRoot();
+	return GMapTex;
+}
+float MapHalfCm() { LoadData(); return DataHalf; }
+
 static struct { bool bOn = false; float X = 0, Y = 0, R = 0, Depth = 0; FVector2D Flow; TArray<float> G; int32 N = 0; } GPool;
 void SetTestPool(float X, float Y, float R, float DepthCm, FVector2D InFlow, TFunctionRef<float(float, float)> Ground)
 {
@@ -166,7 +210,7 @@ FGround GroundAt(float X, float Y, float Z, float Nz, int32 Tire)
 	const float wRock = Smooth(0.22f, 0.42f, Slope);
 	const float Flat = Smooth(0.80f, 0.95f, Nz);
 	const float aDirt = M.Dirt * (1.f - wRock);
-	const float aMud = Sat(M.Mud + Wx.Wet * (0.15f + 0.45f * M.Dirt) * Flat) * (1.f - wRock);
+	const float aMud = Sat(M.Mud + Wx.Wet * (0.15f + 0.45f * M.Dirt) * Flat * (1.f - 0.75f * M.Gravel)) * (1.f - wRock);   // con grava (pistas) el agua drena: menos barro
 	const float aSand = Smooth(0.f, 280.f, 300.f - Z);
 	const float aGravel = M.Gravel * (1.f - 0.5f * wRock);
 	const float aSnow = Smooth(0.015f, 0.07f, Wx.SnowM) * (0.35f + 0.65f * Smooth(0.55f, 0.8f, Nz));
@@ -213,7 +257,8 @@ void Submerge(FGround& G, float DepthM, float FlowMs, int32 Tire)
 	Mix(G, T, 1.f);
 	// las piedras del cauce tienen verdín (resbalan) y el limo hunde más
 	const float Stones = W[SGravel] + W[SRock];
-	G.Mu *= 1.f - A * 0.22f * Stones * (T == 3 ? 0.5f : 1.f);
+	const float Ford = Smooth(0.7f, 0.95f, W[SGravel] * (1.f - Fast * 0.7f));   // vado de grava compactada (máscara): sin verdín
+	G.Mu *= 1.f - A * 0.22f * Stones * (1.f - Ford) * (T == 3 ? 0.5f : 1.f);
 	G.Sink += A * Silt * 0.03f * GTireSink[T];
 	G.Bump += A * Fast * 0.012f;
 	G.SnowM = 0.f;

@@ -132,7 +132,7 @@ w_rock = smooth(slope, 0.22, 0.42)
 flat = smooth(nz, 0.80, 0.95)
 wet = sat(add(wx_wet, wet_amt))
 a_dirt = mul(m_dirt, one_minus(w_rock))
-a_mud = mul(sat(add(m_mud, mul(mul(wet, add(mul(m_dirt, None, 0.45), None, 0.15)), flat))), one_minus(w_rock))
+a_mud = mul(sat(add(m_mud, mul(mul(mul(wet, add(mul(m_dirt, None, 0.45), None, 0.15)), flat), one_minus(mul(m_grav, None, 0.75))))), one_minus(w_rock))   # con grava (pistas) el agua drena
 a_sand = smooth(sub(None, z, ca=300.0), 0.0, 280.0)
 a_grav = mul(m_grav, sub(None, mul(w_rock, None, 0.5), ca=1.0))
 snow_m = add(mul(wx_snow, None, 0.5), mul(snow_amt, None, 0.3))

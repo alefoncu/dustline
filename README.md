@@ -7,6 +7,8 @@ Juego de conducción **off-road de mundo abierto** para macOS, hecho con Unreal 
 ## Qué hay
 
 - **Mundo** de unos 4 × 4 km generado por código (ruido fractal + erosión hidráulica), con lagos, ~27 000 abetos propios de bajo poligonaje, rocas, troncos y material de terreno automático (hierba, tierra, barro, arena, roca, nieve).
+- **Pistas para conducir**: una red de ~20 km de pistas de tierra y grava une diez **puntos de interés** (campamento base, miradores, lagos, vados y valles). Se trazan con búsqueda de caminos que penaliza la pendiente y la ladera, se suavizan para que las curvas se puedan tomar (radio ≥ ~6-7 m) y se excavan en el terreno con la rampa limitada (~20 %), calzada de 8 m sin árboles ni rocas y **vados de grava** de 40 cm donde cruzan un río. Alrededor de cada punto hay un claro. Fuera de las pistas sigue el campo a través.
+- **Explorar**: brújula en el HUD hacia el punto sin descubrir más cercano (tipo y distancia), aviso al descubrirlo y **mapa** a pantalla completa (tecla **M**) con relieve, agua, pistas, puntos y tu posición.
 - **6 coches** (Clase G, Panda 4x4, Defender, Buggy, Pick-up, Rock Crawler) con **carrocerías y piezas propias generadas por código**: ruedas (carretera, todo terreno, barro, clavos, balón), suspensión, transmisión, motor (en línea o en V según la cilindrada) y turbo.
 - **Física propia** del vehículo (suspensión por trazado, neumáticos por superficie, motor con curva de potencia y turbo con retardo, agua, barro, nieve, colisiones).
 - **Interfaz estilo Apple** (Slate propio): menú principal sobre la escena viva, pausa, ajustes (gráficos, juego, controles), velocímetro con cristal esmerilado y taller de piezas (motores, turbos, ruedas, neumáticos, suspensiones, tracción, chasis y pintura). Tipografía SF del sistema (no se distribuye con el juego).
@@ -29,7 +31,9 @@ Juego de conducción **off-road de mundo abierto** para macOS, hecho con Unreal 
 
 ## Controles
 
-`W/S` acelerar y frenar (parado, `S` mete la marcha atrás) · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `B` bloqueo de diferenciales · `L` reductora · `E/Q` subir/bajar marcha (cambio manual) · `R` enderezar · `C` cámara · `G` garaje · `Esc` pausa y menú.
+`W/S` acelerar y frenar (parado, `S` mete la marcha atrás) · `A/D` girar · `Espacio` freno de mano · `Shift` turbo · `B` bloqueo de diferenciales · `L` reductora · `E/Q` subir/bajar marcha (cambio manual) · `R` enderezar · `C` cámara · `G` garaje · `M` mapa · `Esc` pausa y menú. Con teclado el gas y el volante son progresivos.
+
+**Mando**: `RT/LT` gas y freno/marcha atrás (analógicos) · stick izquierdo volante · `A` freno de mano · `X` turbo · `Y` cámara · `B` bloqueos · cruceta ↑ mapa, ↓ reductora, → taller · `LB/RB` cambio manual · `View` enderezar · `Menu` pausa.
 
 ## Estructura
 

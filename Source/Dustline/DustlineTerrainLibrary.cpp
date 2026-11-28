@@ -5,6 +5,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Algo/Sort.h"
+#include "Algo/Reverse.h"
+#include "ImageUtils.h"
 #include "Async/ParallelFor.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -276,6 +278,350 @@ namespace
 	}
 }
 
+
+namespace
+{
+	// ---------------- red de pistas ----------------
+	struct FPoi { FVector2D P; float Z = 0.f; int32 Kind = 0; FString Name; };
+	TArray<FPoi> GPois;                 // en cm (mundo)
+	TArray<float> GTrailDistM;          // distancia a la pista más cercana (m)
+	TArray<uint8> GFord;                // 1 = vado de grava
+	TArray<TArray<FVector2D>> GTrailLines;   // polilíneas de las pistas (cm), para el mapa
+	float GSpawnYaw = 0.f;
+
+	/** Puntos de interés + pistas con rampa limitada entre ellos (búsqueda A* sobre una rejilla de 8 m), excavadas en el
+	 *  terreno con un perfil suave, vados de grava donde cruzan un río, y claros alrededor de cada punto. */
+	void Trails(TArray<float>& Hm, int32 N, float CellM, const FVector& Origin, float XYScale)
+	{
+		const int32 NN = N * N;
+		const int32 C = 4; const int32 Nc = (N - 1) / C + 1; const float Lc = CellM * C;   // rejilla gruesa de 8 m
+		auto Hc = [&](int32 x, int32 y) { return Hm[FMath::Min(y * C, N - 1) * N + FMath::Min(x * C, N - 1)]; };
+		auto IsSea = [&](int32 i) { return Hm[i] < 0.f; };
+		auto IsWater = [&](int32 i) { return GWaterCm[i] > -1e8f || IsSea(i); };
+		auto IsLake = [&](int32 i) { return IsSea(i) || (GWaterCm[i] > -1e8f && FMath::Square(GFlowX[i]) + FMath::Square(GFlowY[i]) < 0.04f); };
+		TArray<float> Slope; Slope.SetNumZeroed(Nc * Nc);
+		for (int32 y = 1; y < Nc - 1; ++y) for (int32 x = 1; x < Nc - 1; ++x)
+		{
+			const float gx = (Hc(x + 1, y) - Hc(x - 1, y)) / (2.f * Lc), gy = (Hc(x, y + 1) - Hc(x, y - 1)) / (2.f * Lc);
+			Slope[y * Nc + x] = FMath::Sqrt(gx * gx + gy * gy);
+		}
+		auto Fine = [&](int32 x, int32 y) { return FMath::Min(y * C, N - 1) * N + FMath::Min(x * C, N - 1); };
+		const int32 Border = Nc / 9;
+		// ---- 1. candidatos: lo más llano que haya (umbral que se relaja hasta tener bastantes), secos, lejos del borde
+		struct FCand { int32 x, y; float Z, Flat, WDist; bool bLake; };
+		TArray<FCand> Cands;
+		for (const float Thr : { 0.08f, 0.12f, 0.16f, 0.21f, 0.27f })
+		{
+			Cands.Reset();
+			for (int32 y = Border; y < Nc - Border; ++y) for (int32 x = Border; x < Nc - Border; ++x)
+			{
+				bool bOk = true; float Mx = 0.f;
+				for (int32 dy = -1; dy <= 1 && bOk; ++dy) for (int32 dx = -1; dx <= 1; ++dx) { const int32 q = (y + dy) * Nc + x + dx; Mx = FMath::Max(Mx, Slope[q]); if (IsWater(Fine(x + dx, y + dy))) { bOk = false; break; } }
+				if (!bOk || Mx > Thr) continue;
+				float Wd = 1e6f; bool bLake = false;
+				for (int32 r = 2; r <= 10 && Wd > 1e5f; ++r) for (int32 a = 0; a < 16; ++a)
+				{
+					const int32 xx = x + FMath::RoundToInt(r * FMath::Cos(a * PI / 8.f)), yy = y + FMath::RoundToInt(r * FMath::Sin(a * PI / 8.f));
+					if (xx < 0 || yy < 0 || xx >= Nc || yy >= Nc) continue;
+					const int32 f = Fine(xx, yy); if (IsWater(f)) { Wd = r * Lc; bLake = IsLake(f); break; }
+				}
+				Cands.Add({ x, y, Hc(x, y), Mx, Wd, bLake });
+			}
+			UE_LOG(LogDustlineTerrain, Display, TEXT("TRAILS umbral %.2f: %d candidatos"), Thr, Cands.Num());
+			if (Cands.Num() >= 1500) break;
+		}
+		UE_LOG(LogDustlineTerrain, Display, TEXT("TRAILS candidatos llanos: %d"), Cands.Num());
+		GPois.Reset();
+		auto FarFromPois = [&](int32 x, int32 y, float MinM) { for (const FPoi& P : GPois) { const float dx = (P.P.X - (Origin.X + x * C * XYScale)) / 100.f, dy = (P.P.Y - (Origin.Y + y * C * XYScale)) / 100.f; if (dx * dx + dy * dy < MinM * MinM) return false; } return true; };
+		auto AddPoi = [&](const FCand& K, int32 Kind, const TCHAR* Name) { FPoi P; P.P = FVector2D(Origin.X + K.x * C * XYScale, Origin.Y + K.y * C * XYScale); P.Z = K.Z * 100.f; P.Kind = Kind; P.Name = Name; GPois.Add(P); };
+		auto Pick = [&](TFunctionRef<float(const FCand&)> Score, int32 Kind, const TCHAR* Name, float MinM) -> bool
+		{
+			const FCand* Best = nullptr; float BS = -1e9f;
+			for (const FCand& K : Cands) { const float Sc = Score(K); if (Sc > BS && Sc > -1e8f && FarFromPois(K.x, K.y, MinM)) { BS = Sc; Best = &K; } }
+			if (Best) { AddPoi(*Best, Kind, Name); return true; } return false;
+		};
+		float Zmin = 1e9f, Zmax = -1e9f; for (const FCand& K : Cands) { Zmin = FMath::Min(Zmin, K.Z); Zmax = FMath::Max(Zmax, K.Z); }
+		const float Mid = Nc * 0.5f;
+		// campamento: llano grande cerca del centro, ni muy alto ni pegado al agua
+		Pick([&](const FCand& K) { const float D = FVector2D(K.x - Mid, K.y - Mid).Size() / Nc; return -D * 3.f - K.Flat * 10.f - (K.WDist < 60.f ? 2.f : 0.f) - FMath::Abs((K.Z - Zmin) / (Zmax - Zmin + 1.f) - 0.35f); }, 0, TEXT("Campamento base"), 0.f);
+		const TCHAR* MirN[] = { TEXT("Mirador del Águila"), TEXT("Mirador de los Pinos"), TEXT("Alto del Viento") };
+		const TCHAR* LakeN[] = { TEXT("Lago Azul"), TEXT("Laguna Negra") };
+		const TCHAR* RivN[] = { TEXT("Vado del Molino"), TEXT("Vega del Río") };
+		const TCHAR* ValN[] = { TEXT("Refugio del Valle"), TEXT("Prado Hondo") };
+		for (int32 k = 0; k < 3; ++k) Pick([&](const FCand& K) { return K.Z - K.Flat * 200.f; }, 1, MirN[k], 900.f);
+		for (int32 k = 0; k < 2; ++k) Pick([&](const FCand& K) { return K.bLake && K.WDist < 60.f ? -K.WDist - K.Flat * 100.f : -1e9f; }, 2, LakeN[k], 700.f);
+		for (int32 k = 0; k < 2; ++k) Pick([&](const FCand& K) { return !K.bLake && K.WDist < 50.f ? -K.WDist - K.Flat * 100.f : -1e9f; }, 3, RivN[k], 700.f);
+		for (int32 k = 0; k < 2; ++k) Pick([&](const FCand& K) { return -K.Z - K.Flat * 200.f; }, 4, ValN[k], 800.f);
+		for (const FPoi& P : GPois) UE_LOG(LogDustlineTerrain, Display, TEXT("TRAILS punto %s (%d) en %.0f,%.0f z=%.0f m"), *P.Name, P.Kind, P.P.X, P.P.Y, P.Z / 100.f);
+		if (GPois.Num() < 2) { GTrailDistM.Init(1e6f, NN); GFord.Init(0, NN); return; }
+
+		// ---- 2. qué puntos unir: árbol de expansión mínima + dos atajos para hacer bucles
+		const int32 NP = GPois.Num();
+		TArray<TPair<int32, int32>> Edges;
+		{
+			TArray<bool> In; In.Init(false, NP); In[0] = true;
+			for (int32 it = 1; it < NP; ++it)
+			{
+				float Bd = 1e18f; int32 Ba = -1, Bb = -1;
+				for (int32 a = 0; a < NP; ++a) if (In[a]) for (int32 b = 0; b < NP; ++b) if (!In[b]) { const float d = FVector2D::DistSquared(GPois[a].P, GPois[b].P); if (d < Bd) { Bd = d; Ba = a; Bb = b; } }
+				if (Bb < 0) break; In[Bb] = true; Edges.Add({ Ba, Bb });
+			}
+			TArray<TPair<float, TPair<int32, int32>>> Extra;
+			for (int32 a = 0; a < NP; ++a) for (int32 b = a + 1; b < NP; ++b)
+			{
+				bool bHas = false; for (auto& E : Edges) if ((E.Key == a && E.Value == b) || (E.Key == b && E.Value == a)) bHas = true;
+				if (!bHas) Extra.Add(TPair<float, TPair<int32, int32>>((float)FVector2D::Distance(GPois[a].P, GPois[b].P), TPair<int32, int32>(a, b)));
+			}
+			Extra.Sort([](auto& A, auto& B) { return A.Key < B.Key; });
+			for (int32 k = 0; k < FMath::Min(2, Extra.Num()); ++k) Edges.Add(Extra[k].Value);
+		}
+		// ---- 3. A* con coste por rampa, ladera lateral y agua (los ríos se cruzan, lagos y mar no)
+		TArray<uint8> OnTrail; OnTrail.SetNumZeroed(Nc * Nc);
+		const int32 NDX[16] = { 1, -1, 0, 0, 1, 1, -1, -1, 2, 2, -2, -2, 1, -1, 1, -1 }, NDY[16] = { 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 2, 2, -2, -2 };
+		TArray<float> G; TArray<int32> Prev; TArray<uint8> Closed;
+		auto Plan = [&](int32 a, int32 b, TArray<int32>& Out) -> bool
+		{
+			auto ToC = [&](const FVector2D& P) { return FIntPoint(FMath::Clamp(FMath::RoundToInt((P.X - Origin.X) / XYScale / C), 0, Nc - 1), FMath::Clamp(FMath::RoundToInt((P.Y - Origin.Y) / XYScale / C), 0, Nc - 1)); };
+			const FIntPoint S = ToC(GPois[a].P), T = ToC(GPois[b].P);
+			G.Init(1e30f, Nc * Nc); Prev.Init(-1, Nc * Nc); Closed.Init(0, Nc * Nc);
+			struct FN { float F; int32 I; bool operator<(const FN& O) const { return F < O.F; } };
+			TArray<FN> Open; const int32 si = S.Y * Nc + S.X, ti = T.Y * Nc + T.X;
+			G[si] = 0.f; Open.HeapPush({ 0.f, si });
+			while (Open.Num())
+			{
+				FN Cur; Open.HeapPop(Cur, EAllowShrinking::No);
+				if (Closed[Cur.I]) continue; Closed[Cur.I] = 1;
+				if (Cur.I == ti) break;
+				const int32 x = Cur.I % Nc, y = Cur.I / Nc;
+				for (int32 k = 0; k < 16; ++k)
+				{
+					const int32 xx = x + NDX[k], yy = y + NDY[k];
+					if (xx < 2 || yy < 2 || xx >= Nc - 2 || yy >= Nc - 2) continue;
+					const int32 j = yy * Nc + xx; if (Closed[j]) continue;
+					const int32 f = Fine(xx, yy);
+					if (IsLake(f)) continue;
+					const float L = FMath::Sqrt(float(NDX[k] * NDX[k] + NDY[k] * NDY[k])) * Lc;
+					const float Gr = FMath::Abs(Hc(xx, yy) - Hc(x, y)) / L;
+					if (Gr > 0.32f) continue;
+					float Cost = L * (1.f + 40.f * Gr * Gr) + (Gr > 0.16f ? L * 60.f * (Gr - 0.16f) : 0.f);
+					Cost += L * 6.f * FMath::Max(0.f, Slope[j] - 0.25f);           // ladera muy inclinada a los lados
+					if (IsWater(f)) Cost += 300.f + L * 6.f;                         // cruzar un río cuesta mucho: lo cruza de frente y por lo estrecho, nunca va por el cauce
+					if (OnTrail[j]) Cost *= 0.45f;                                   // reutilizar pistas: la red se junta
+					const float Ng = G[Cur.I] + Cost;
+					if (Ng < G[j]) { G[j] = Ng; Prev[j] = Cur.I; Open.HeapPush({ Ng + FVector2D(xx - T.X, yy - T.Y).Size() * Lc, j }); }
+				}
+			}
+			if (Prev[ti] < 0) return false;
+			Out.Reset(); for (int32 c = ti; c >= 0; c = Prev[c]) { Out.Add(c); if (c == si) break; }
+			Algo::Reverse(Out); return true;
+		};
+		GTrailLines.Reset();
+		for (auto& E : Edges)
+		{
+			TArray<int32> Path;
+			if (!Plan(E.Key, E.Value, Path)) { UE_LOG(LogDustlineTerrain, Warning, TEXT("TRAILS sin camino entre %s y %s"), *GPois[E.Key].Name, *GPois[E.Value].Name); continue; }
+			for (int32 c : Path) OnTrail[c] = 1;
+			TArray<FVector2D> Raw; for (int32 c : Path) Raw.Add(FVector2D(Origin.X + (c % Nc) * C * XYScale, Origin.Y + (c / Nc) * C * XYScale));
+			// remuestreo cada 4 m y relajación (cada punto se acerca al punto medio de sus vecinos, sin alejarse más de 9 m
+			// de la ruta original ni meterse en un lago): quita el zigzag de la rejilla y abre las curvas cerradas (radio ≥ ~10 m)
+			TArray<FVector2D> Pts; Pts.Add(Raw[0]);
+			{ double Carry = 0.0; for (int32 i = 0; i + 1 < Raw.Num(); ++i) { const double L = FVector2D::Distance(Raw[i], Raw[i + 1]); if (L < 1e-3) continue; double t = 400.0 - Carry; while (t <= L) { Pts.Add(FMath::Lerp(Raw[i], Raw[i + 1], t / L)); t += 400.0; } Carry = L - (t - 400.0); } Pts.Add(Raw.Last()); }
+			const TArray<FVector2D> Orig = Pts;
+			auto WetAt = [&](const FVector2D& P) { const int32 gx = FMath::Clamp(FMath::RoundToInt((P.X - Origin.X) / XYScale), 0, N - 1), gy = FMath::Clamp(FMath::RoundToInt((P.Y - Origin.Y) / XYScale), 0, N - 1); return IsWater(gy * N + gx); };
+			TArray<bool> OrigWet; for (const FVector2D& P : Orig) OrigWet.Add(WetAt(P));
+			for (int32 it = 0; it < 400; ++it)
+			{
+				for (int32 i = 2; i + 2 < Pts.Num(); ++i)
+				{
+					const FVector2D MidP = (Pts[i - 2] + Pts[i - 1] * 4.0 + Pts[i + 1] * 4.0 + Pts[i + 2]) / 10.0;
+					FVector2D Np = Pts[i] + (MidP - Pts[i]) * 0.5;
+					const FVector2D Dv = Np - Orig[i]; if (Dv.Size() > 1500.0) Np = Orig[i] + Dv.GetSafeNormal() * 1500.0;
+					if (!WetAt(Np) || OrigWet[i]) Pts[i] = Np;   // el suavizado no mete la pista en un río por el que no cruzaba
+				}
+			}
+			// nudos: si la pista vuelve a menos de 5 m de un punto por el que ya pasó (bucle pequeño), se corta el bucle
+			for (bool bCut = true; bCut;)
+			{
+				bCut = false;
+				for (int32 i = 0; i < Pts.Num() && !bCut; ++i)
+					for (int32 j = i + 4; j < FMath::Min(Pts.Num(), i + 45); ++j)
+						if (FVector2D::Distance(Pts[i], Pts[j]) < 500.0) { Pts.RemoveAt(i + 1, j - i - 1); bCut = true; break; }
+			}
+			for (int32 it = 0; it < 60; ++it)   // un repaso de suavizado tras cortar
+				for (int32 i = 2; i + 2 < Pts.Num(); ++i)
+				{
+					const FVector2D MidP = (Pts[i - 2] + Pts[i - 1] * 4.0 + Pts[i + 1] * 4.0 + Pts[i + 2]) / 10.0;
+					const FVector2D Np = Pts[i] + (MidP - Pts[i]) * 0.5;
+					if (!WetAt(Np) || WetAt(Pts[i])) Pts[i] = Np;
+				}
+			GTrailLines.Add(Pts);
+		}
+		// ---- 3b. pistas que comparten corredor: la posterior se funde exactamente con la anterior (si van paralelas a pocos
+		// metros, cada una nivelaría el suelo a su altura y entre ambas quedaría un corte inclinado)
+		{
+			TMap<FIntPoint, TArray<FVector2D>> Hash; auto Key = [](const FVector2D& P) { return FIntPoint(FMath::FloorToInt(P.X / 1200.0), FMath::FloorToInt(P.Y / 1200.0)); };
+			for (int32 k = 0; k < GTrailLines.Num(); ++k)
+			{
+				TArray<FVector2D>& Ln = GTrailLines[k];
+				if (k > 0)
+				{
+					TArray<bool> Snapped; Snapped.Init(false, Ln.Num());
+					for (int32 i = 0; i < Ln.Num(); ++i)
+					{
+						const FIntPoint K0 = Key(Ln[i]); double Bd = 1200.0 * 1200.0; FVector2D Best;
+						for (int32 dy = -1; dy <= 1; ++dy) for (int32 dx = -1; dx <= 1; ++dx) if (const TArray<FVector2D>* A = Hash.Find(K0 + FIntPoint(dx, dy))) for (const FVector2D& Q : *A) { const double D = FVector2D::DistSquared(Q, Ln[i]); if (D < Bd) { Bd = D; Best = Q; } }
+						if (Bd < 1200.0 * 1200.0) { Ln[i] = Best; Snapped[i] = true; }
+					}
+					for (int32 it = 0; it < 80; ++it)   // los tramos libres se suavizan hacia los fundidos (sin moverlos)
+						for (int32 i = 2; i + 2 < Ln.Num(); ++i) if (!Snapped[i])
+						{
+							const FVector2D MidP = (Ln[i - 2] + Ln[i - 1] * 4.0 + Ln[i + 1] * 4.0 + Ln[i + 2]) / 10.0;
+							Ln[i] += (MidP - Ln[i]) * 0.5;
+						}
+					// quita puntos repetidos seguidos
+					TArray<FVector2D> U; for (const FVector2D& P : Ln) if (U.Num() == 0 || FVector2D::Distance(U.Last(), P) > 150.0) U.Add(P);
+					Ln = U;
+				}
+				for (const FVector2D& P : Ln) Hash.FindOrAdd(Key(P)).Add(P);
+			}
+		}
+		// ---- 4. perfil de cada pista (rampa ≤ 18 %) y excavado en el terreno fino
+		auto HAt = [&](const FVector2D& P) { const float fx = FMath::Clamp((P.X - Origin.X) / XYScale, 0.f, N - 1.001f), fy = FMath::Clamp((P.Y - Origin.Y) / XYScale, 0.f, N - 1.001f); const int32 ix = (int32)fx, iy = (int32)fy; const float u = fx - ix, v = fy - iy; const int32 i = iy * N + ix; return Hm[i] * (1 - u) * (1 - v) + Hm[i + 1] * u * (1 - v) + Hm[i + N] * (1 - u) * v + Hm[i + N + 1] * u * v; };
+		auto Idx = [&](const FVector2D& P) { return FMath::Clamp(FMath::RoundToInt((P.Y - Origin.Y) / XYScale), 0, N - 1) * N + FMath::Clamp(FMath::RoundToInt((P.X - Origin.X) / XYScale), 0, N - 1); };
+		TArray<float> BestD; BestD.Init(1e9f, NN); TArray<float> Target; Target.Init(0.f, NN);
+		TArray<float> FordLv; FordLv.Init(1e9f, NN);   // nivel del vado cercano (m): el río baja a ese nivel alrededor del vado
+		GTrailDistM.Init(1e6f, NN); GFord.Init(0, NN);
+		int32 Fords = 0; double TotalM = 0.0;
+		TMap<FIntPoint, TArray<TPair<FVector2D, float>>> PHash; auto PKey = [](const FVector2D& P) { return FIntPoint(FMath::FloorToInt(P.X / 400.0), FMath::FloorToInt(P.Y / 400.0)); };
+		for (TArray<FVector2D>& Line : GTrailLines)
+		{
+			// muestras exactamente cada 2 m a lo largo de la pista (el límite de rampa va por muestra: con tramos cortos se disparaba)
+			TArray<FVector2D> S; S.Add(Line[0]);
+			{
+				double Carry = 0.0;
+				for (int32 i = 0; i + 1 < Line.Num(); ++i)
+				{
+					const FVector2D A = Line[i], B = Line[i + 1]; const double L = FVector2D::Distance(A, B); if (L < 1e-3) continue;
+					double t = 200.0 - Carry;
+					while (t <= L) { S.Add(FMath::Lerp(A, B, t / L)); t += 200.0; }
+					Carry = L - (t - 200.0);
+				}
+				if (FVector2D::Distance(S.Last(), Line.Last()) > 50.0) S.Add(Line.Last());
+			}
+			const int32 M = S.Num(); TotalM += M * 2.0;
+			TArray<float> Gz, P; Gz.SetNum(M); P.SetNum(M); TArray<float> Fix; Fix.Init(-1e9f, M); TArray<bool> WF; WF.Init(false, M);
+			for (int32 i = 0; i < M; ++i)
+			{
+				Gz[i] = HAt(S[i]); const int32 q = Idx(S[i]);
+				if (GWaterCm[q] > -1e8f) { Fix[i] = GWaterCm[q] / 100.f - 0.4f; WF[i] = true; }   // vado: 40 cm de agua sobre grava
+			}
+			// tramo compartido con una pista anterior: misma altura que ella (punto fijo), así los empalmes no hacen escalón
+			for (int32 i = 0; i < M; ++i) if (Fix[i] < -1e8f)
+			{
+				const FIntPoint K0 = PKey(S[i]); double Bd = 250.0 * 250.0; float Pv = -1e9f;
+				for (int32 dy = -1; dy <= 1; ++dy) for (int32 dx = -1; dx <= 1; ++dx) if (const auto* A = PHash.Find(K0 + FIntPoint(dx, dy))) for (const auto& Q : *A) { const double D = FVector2D::DistSquared(Q.Key, S[i]); if (D < Bd) { Bd = D; Pv = Q.Value; } }
+				if (Pv > -1e8f) Fix[i] = Pv;
+			}
+			// cada vado es llano: todo el cruce (tramo seguido en el agua, con 6 m de margen) al nivel más bajo de ese cruce
+			for (int32 i = 0; i < M;)
+			{
+				if (!WF[i]) { ++i; continue; }
+				int32 j = i; float Lo = Fix[i];
+				while (j + 1 < M && (WF[j + 1] || (j + 3 < M && WF[j + 3]) || (j + 2 < M && WF[j + 2]))) { ++j; if (WF[j]) Lo = FMath::Min(Lo, Fix[j]); }
+				for (int32 k = i; k <= j; ++k) { Fix[k] = Lo; WF[k] = true; }
+				i = j + 1;
+			}
+			for (int32 i = 0; i < M; ++i) { float Sum = 0.f; int32 Cn = 0; for (int32 k = FMath::Max(0, i - 10); k <= FMath::Min(M - 1, i + 10); ++k) { Sum += Gz[k]; ++Cn; } P[i] = Sum / Cn; }
+			const float Gmax = 0.18f * 2.f;
+			// rampa limitada; los vados son puntos fijos y las rampas de acceso se adaptan a ellos
+			for (int32 pass = 0; pass < 6; ++pass)
+			{
+				for (int32 i = 0; i < M; ++i) { if (Fix[i] > -1e8f) P[i] = Fix[i]; else P[i] = FMath::Max(P[i], 0.6f); }   // nunca por debajo del mar
+				for (int32 i = 1; i < M; ++i) if (Fix[i] < -1e8f) P[i] = FMath::Clamp(P[i], P[i - 1] - Gmax, P[i - 1] + Gmax);
+				for (int32 i = M - 2; i >= 0; --i) if (Fix[i] < -1e8f) P[i] = FMath::Clamp(P[i], P[i + 1] - Gmax, P[i + 1] + Gmax);
+			}
+			for (int32 i = 0; i < M; ++i) { if (WF[i]) ++Fords; PHash.FindOrAdd(PKey(S[i])).Add(TPair<FVector2D, float>(S[i], P[i])); }
+			for (int32 i = 0; i < M; ++i)
+			{
+				const int32 cx = FMath::RoundToInt((S[i].X - Origin.X) / XYScale), cy = FMath::RoundToInt((S[i].Y - Origin.Y) / XYScale);
+				const int32 R = 14;  // 28 m: calzada, talud (más ancho cuanto más terraplén o desmonte) y distancia
+				for (int32 dy = -R; dy <= R; ++dy) for (int32 dx = -R; dx <= R; ++dx)
+				{
+					const int32 xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+					const int32 q = yy * N + xx;
+					const float D = FVector2D::Distance(FVector2D(Origin.X + xx * XYScale, Origin.Y + yy * XYScale), S[i]) / 100.f;
+					GTrailDistM[q] = FMath::Min(GTrailDistM[q], D);
+					if (D < BestD[q]) { BestD[q] = D; Target[q] = P[i]; }   // cada celda toma la altura del punto de pista más cercano
+					if (WF[i] && D < 7.f) GFord[q] = 1;
+					if (WF[i] && D < 14.f) FordLv[q] = FMath::Min(FordLv[q], Fix[i] + 0.4f);
+				}
+			}
+		}
+		for (int32 q = 0; q < NN; ++q) if (BestD[q] < 27.f)
+		{
+			const float D = BestD[q];
+			// talud 1:1,7 como mucho: con un terraplén o un desmonte alto el talud se ensancha (si no, el coche vuelca por el borde)
+			const float Wsh = FMath::Clamp(2.6f * FMath::Abs(Target[q] - Hm[q]), 6.f, 22.f);   // talud 1:2,6 (~21°): si el coche se sale un poco no vuelca
+			if (D > 4.6f + Wsh) continue;
+			const float W = D < 4.6f ? 1.f : FMath::Square(1.f - (D - 4.6f) / Wsh);   // calzada de 9 m
+			const float NewH = FMath::Lerp(Hm[q], Target[q], W);
+			// una celda seca no puede quedar bajo el agua del río de al lado (se vería un hoyo seco): solo los vados bajan al agua
+			Hm[q] = NewH;
+			if (GWaterCm[q] > -1e8f && !GFord[q] && Hm[q] * 100.f > GWaterCm[q] - 2.f) GWaterCm[q] = -1e9f;
+			if (GFord[q] && GWaterCm[q] > -1e8f) { GWaterCm[q] = Hm[q] * 100.f + 40.f; GFlowX[q] *= 0.6f; GFlowY[q] *= 0.6f; }   // vado: 40 cm justos sobre la grava, corriente algo más mansa (el agua se abre)
+		}
+		// alrededor del vado el río es un rápido poco hondo: su nivel no pasa del del vado (si no, inundaría el vado)
+		for (int32 q = 0; q < NN; ++q) if (FordLv[q] < 1e8f && GWaterCm[q] > -1e8f && !GFord[q])
+		{
+			GWaterCm[q] = FMath::Min(GWaterCm[q], FordLv[q] * 100.f);
+			Hm[q] = FMath::Max(Hm[q], FordLv[q] - 0.8f);   // el lecho junto al vado sube: rápido de 80 cm como mucho (sin pozas al lado)
+			if (GWaterCm[q] < Hm[q] * 100.f + 5.f) GWaterCm[q] = -1e9f;
+		}
+		// cruces y empalmes: varias pasadas de suavizado solo dentro de la calzada (quita escalones entre pistas distintas)
+		for (int32 pass = 0; pass < 6; ++pass)
+		{
+			TArray<float> Hs = Hm;
+			ParallelFor(N, [&](int32 y)
+			{
+				for (int32 x = 1; x < N - 1; ++x)
+				{
+					const int32 q = y * N + x; if (y == 0 || y == N - 1 || BestD[q] > 5.f || GFord[q]) continue;
+					float Sum = 0.f, W = 0.f;
+					for (int32 dy = -1; dy <= 1; ++dy) for (int32 dx = -1; dx <= 1; ++dx) { const int32 r = q + dy * N + dx; if (BestD[r] <= 6.f) { Sum += Hm[r]; W += 1.f; } }
+					if (W > 0.f) Hs[q] = Sum / W;
+				}
+			});
+			Hm = Hs;
+		}
+		// claros alrededor de los puntos de interés (llanos de 30 m) — se aplanan suavemente
+		for (const FPoi& Pt : GPois)
+		{
+			const int32 cx = FMath::RoundToInt((Pt.P.X - Origin.X) / XYScale), cy = FMath::RoundToInt((Pt.P.Y - Origin.Y) / XYScale);
+			const float Z0 = HAt(Pt.P);
+			for (int32 dy = -20; dy <= 20; ++dy) for (int32 dx = -20; dx <= 20; ++dx)
+			{
+				const int32 xx = cx + dx, yy = cy + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+				const int32 q = yy * N + xx; if (IsWater(q)) continue;
+				const float D = FMath::Sqrt(float(dx * dx + dy * dy)) * CellM;
+				const float W = D < 25.f ? 1.f : (D < 40.f ? FMath::Square(1.f - (D - 25.f) / 15.f) : 0.f);
+				if (W > 0.f && BestD[q] > 9.f) { Hm[q] = FMath::Lerp(Hm[q], Z0, W * 0.9f); }   // el claro no toca la pista
+			}
+		}
+		// la salida: en el campamento, mirando hacia donde arranca la primera pista
+		GSpawnYaw = 0.f;
+		for (const TArray<FVector2D>& L : GTrailLines)
+			if (L.Num() > 12 && FVector2D::Distance(L[0], GPois[0].P) < 3000.0) { const FVector2D D = L[12] - L[0]; GSpawnYaw = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)); break; }
+		UE_LOG(LogDustlineTerrain, Display, TEXT("TRAILS %d puntos, %d pistas, %.1f km, %d muestras de vado"), GPois.Num(), GTrailLines.Num(), TotalM / 1000.0, Fords);
+		for (int32 k = 0; k < GTrailLines.Num(); ++k)   // comprobación: rampa real sobre el terreno ya excavado (ventana de 6 m)
+		{
+			const TArray<FVector2D>& Ln = GTrailLines[k]; TArray<FVector2D> S2;
+			for (int32 i = 0; i + 1 < Ln.Num(); ++i) { const int32 K = FMath::Max(1, (int32)(FVector2D::Distance(Ln[i], Ln[i + 1]) / 200.0)); for (int32 j = 0; j < K; ++j) S2.Add(FMath::Lerp(Ln[i], Ln[i + 1], j / (double)K)); }
+			TArray<float> Gs; for (int32 i = 3; i + 3 < S2.Num(); ++i) Gs.Add(FMath::Abs(HAt(S2[i + 3]) - HAt(S2[i - 3])) * 100.f / FMath::Max(1.f, (float)FVector2D::Distance(S2[i + 3], S2[i - 3])));
+			Gs.Sort(); if (Gs.Num()) UE_LOG(LogDustlineTerrain, Display, TEXT("TRAILS pista %d: rampa p95=%.0f%% max=%.0f%%"), k + 1, Gs[(int32)(Gs.Num() * 0.95f)] * 100.f, Gs.Last() * 100.f);
+		}
+	}
+}
+
 namespace
 {
 	float SampleGrid(const TArray<float>& A, float X, float Y, float Def)
@@ -363,6 +709,10 @@ ALandscape* UDustlineTerrainLibrary::CreateProceduralLandscape(UObject* WorldCon
 	TArray<float> Hm; Hm.SetNumUninitialized(N * N);
 	for (int32 i = 0; i < N * N; ++i) Hm[i] = ((H[i] - MinH) / Range) * MaxHeightMeters - WaterOffsetM;
 	Hydrology(Hm, N, XYScale / 100.f);   // ríos excavados + lagos: modifica Hm y rellena GWaterCm/GFlow/GWaterDistM
+	{
+		const float HalfW = (N - 1) * XYScale * 0.5f;
+		Trails(Hm, N, XYScale / 100.f, bCenterOnOrigin ? FVector(-HalfW, -HalfW, 0) : FVector::ZeroVector, XYScale);   // pistas, vados y claros
+	}
 	UE_LOG(LogDustlineTerrain, Display, TEXT("Hydrology done in %.1fs"), FPlatformTime::Seconds() - T0);
 	for (int32 i = 0; i < N * N; ++i)
 	{
@@ -413,8 +763,15 @@ float UDustlineTerrainLibrary::GetTerrainHeight(UObject* WorldContextObject, flo
 	return -1e9f;
 }
 
+float UDustlineTerrainLibrary::GetSpawnYaw() { return GSpawnYaw; }
+
 FVector UDustlineTerrainLibrary::FindSpawnLocation(UObject* WorldContextObject)
 {
+	if (GPois.Num() > 0 && GSize > 0)   // el campamento base, al principio de las pistas
+	{
+		const FVector2D P = GPois[0].P;
+		return FVector(P.X, P.Y, SampleGrid(GHeightCm, P.X, P.Y, 0.f) + 200.f);
+	}
 	float Best = 1e18f; bool bFound = false; FVector OutLocation(0, 0, -1e9f);
 	for (float R = 0; R < 150000.f && !bFound; R += 5000.f)
 	{
@@ -451,6 +808,8 @@ AActor* UDustlineTerrainLibrary::ScatterInstances(UObject* WorldContextObject, U
 		const float Y = GOrigin.Y + Rng.FRandRange(Margin, 2 * Half - Margin);
 		if (X * X + Y * Y < 2500.f * 2500.f) continue; // clear area around the origin
 		if (WaterDistAt(X, Y) < 3.f) continue;          // nada dentro de ríos/lagos ni pegado a la orilla
+		if (SampleGrid(GTrailDistM, X, Y, 1e6f) < 7.5f + 0.5f * MaxScale * Mesh->GetBounds().BoxExtent.Size2D() / 100.f) continue;   // pistas despejadas (también del vuelo de las rocas grandes)
+		{ bool bNear = false; for (const FPoi& P : GPois) if (FVector2D::DistSquared(P.P, FVector2D(X, Y)) < 4200.f * 4200.f) { bNear = true; break; } if (bNear) continue; }   // claros
 		const float Z = GetTerrainHeight(WorldContextObject, X, Y);
 		if (Z < MinZCm || Z > MaxZCm) continue;
 		const float Zx = GetTerrainHeight(WorldContextObject, X + 200.f, Y), Zy = GetTerrainHeight(WorldContextObject, X, Y + 200.f);
@@ -669,6 +1028,15 @@ int32 UDustlineTerrainLibrary::BakeWorldData(UObject* WorldContextObject, UMater
 				++StatN; if (Sm(0.60f, 0.72f, nA) > 0.3f) ++StatA; if (0.3f * Sm(0.16f, 0.26f, Slope) > 0.15f) ++StatS; if (Z > 23000.f) ++StatH; if (Slope > 0.16f) ++StatSl; if (Dirt > 0.3f) ++StatD;
 				if (FMath::Abs(X) > Half * 0.83f || FMath::Abs(Y) > Half * 0.83f) { ++StatEdge; if (Dirt > 0.3f) ++StatEdgeD; }
 			}
+			{   // pistas: calzada de tierra compactada con grava en el centro, cunetas con hierba, vados de grava
+				const float Td = SampleGrid(GTrailDistM, X, Y, 1e6f);
+				const float Road = Sm(4.4f, 3.0f, Td), Shoulder = Sm(7.5f, 4.0f, Td);
+				Dirt = FMath::Max(Dirt, 0.92f * Road); Grav = FMath::Max(Grav * (1.f - Road), 0.45f * Sm(1.6f, 0.4f, Td) + 0.25f * Road);
+				Mud *= 1.f - 0.6f * Road; Tall *= 1.f - Shoulder;
+				const int32 gx = FMath::Clamp(FMath::RoundToInt((X - GOrigin.X) / GXYScale), 0, N - 1), gy = FMath::Clamp(FMath::RoundToInt((Y - GOrigin.Y) / GXYScale), 0, N - 1);
+				if (GFord.Num() == N * N && GFord[gy * N + gx]) { Grav = 1.f; Mud = 0.f; }
+				for (const FPoi& Pp : GPois) { const float D = FVector2D::Distance(Pp.P, FVector2D(X, Y)) / 100.f; if (D < 30.f) { Tall *= Sm(14.f, 30.f, D); Dirt = FMath::Max(Dirt, 0.35f * Sm(18.f, 8.f, D)); } }
+			}
 			Dirt = FMath::Clamp(Dirt, 0.f, 1.f); Mud = FMath::Clamp(Mud, 0.f, 1.f); Grav = FMath::Clamp(Grav, 0.f, 1.f);
 			Tall = FMath::Clamp(Tall * (1.f - 0.7f * Dirt) * (1.f - 0.6f * Mud) * (1.f - 0.8f * Grav), 0.f, 1.f);
 			uint8* P = &RGBA[(py * M + px) * 4];
@@ -692,7 +1060,7 @@ int32 UDustlineTerrainLibrary::BakeWorldData(UObject* WorldContextObject, UMater
 	}
 	// ---- 2. world.bin para la física (máscara + corriente y profundidad del agua) ----
 	{
-		const int32 FN = 1024;
+		const int32 FN = 2048;   // misma resolución que el terreno (2 m): con 4 m el nivel de los arroyos en cuesta "se derramaba" a la orilla
 		TArray<uint8> Out; Out.Reserve(16 + M * M * 4 + FN * FN * 4);
 		auto PutI = [&](int32 V) { Out.Append((uint8*)&V, 4); }; auto PutF = [&](float V) { Out.Append((uint8*)&V, 4); };
 		Out.Append((const uint8*)"DLW3", 4); PutI(M); PutI(FN); PutF(Half);
@@ -713,6 +1081,37 @@ int32 UDustlineTerrainLibrary::BakeWorldData(UObject* WorldContextObject, UMater
 		const FString Dir = FPaths::ProjectContentDir() / TEXT("Data");
 		IFileManager::Get().MakeDirectory(*Dir, true);
 		FFileHelper::SaveArrayToFile(Out, *(Dir / TEXT("world.bin")));
+		// puntos de interés (nombre;tipo;x;y;z) para el juego
+		FString Txt; for (const FPoi& P : GPois) Txt += FString::Printf(TEXT("%s;%d;%.0f;%.0f;%.0f\n"), *P.Name, P.Kind, P.P.X, P.P.Y, SampleGrid(GHeightCm, P.P.X, P.P.Y, 0.f));
+		FFileHelper::SaveStringToFile(Txt, *(Dir / TEXT("pois.txt")), FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+		// pistas (polilíneas en cm, un punto cada ~6 m) para pruebas y futuras ayudas de navegación
+		FString Tr; for (const TArray<FVector2D>& L : GTrailLines) { for (int32 i = 0; i < L.Num(); i += 1) Tr += FString::Printf(TEXT("%.0f,%.0f;"), L[i].X, L[i].Y); Tr += FString::Printf(TEXT("%.0f,%.0f\n"), L.Last().X, L.Last().Y); }
+		FFileHelper::SaveStringToFile(Tr, *(Dir / TEXT("trails.txt")));
+		// mapa 1024² (relieve sombreado, agua, pistas) para la pantalla de mapa
+		const int32 MN = 1024; TArray<FColor> Img; Img.SetNumUninitialized(MN * MN);
+		float Zlo = 1e9f, Zhi = -1e9f; for (float V : GHeightCm) { Zlo = FMath::Min(Zlo, V); Zhi = FMath::Max(Zhi, V); }
+		Zlo = FMath::Max(Zlo, 0.f);
+		ParallelFor(MN, [&](int32 py)
+		{
+			for (int32 px = 0; px < MN; ++px)
+			{
+				const float X = -Half + (px + 0.5f) / MN * Size, Y = -Half + (py + 0.5f) / MN * Size;
+				const float Z = H(X, Y), Zx = H(X + 400.f, Y), Zy = H(X, Y + 400.f);
+				const FVector Nn = FVector(-(Zx - Z) / 400.f, -(Zy - Z) / 400.f, 1.f).GetSafeNormal();
+				const float Shade = FMath::Clamp(FVector::DotProduct(Nn, FVector(-0.5f, -0.6f, 0.62f).GetSafeNormal()), 0.f, 1.f);
+				const float T = FMath::Clamp((Z - Zlo) / (Zhi - Zlo), 0.f, 1.f);
+				FLinearColor Base = FMath::Lerp(FLinearColor(0.30f, 0.38f, 0.22f), FLinearColor(0.55f, 0.50f, 0.40f), Sm(0.35f, 0.75f, T));
+				Base = FMath::Lerp(Base, FLinearColor(0.85f, 0.85f, 0.83f), Sm(0.82f, 0.95f, T));
+				FLinearColor Col = Base * (0.45f + 0.75f * Shade); Col.A = 1.f;
+				const int32 gx = FMath::Clamp(FMath::RoundToInt((X - GOrigin.X) / GXYScale), 0, N - 1), gy = FMath::Clamp(FMath::RoundToInt((Y - GOrigin.Y) / GXYScale), 0, N - 1);
+				if (GWaterCm[gy * N + gx] > -1e8f || Z < 0.f) Col = FLinearColor(0.16f, 0.36f, 0.58f);
+				const float Td = SampleGrid(GTrailDistM, X, Y, 1e6f);
+				if (Td < 5.f) Col = FMath::Lerp(Col, FLinearColor(0.96f, 0.86f, 0.62f), Sm(5.f, 2.f, Td));
+				Img[py * MN + px] = Col.ToFColor(false);
+			}
+		});
+		TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(MN, MN, TArrayView64<const FColor>(Img.GetData(), Img.Num()), Png);
+		FFileHelper::SaveArrayToFile(Png, *(Dir / TEXT("map.png")));
 	}
 	// ---- 3. mallas de agua de ríos y lagos, por baldosas de 128x128 celdas ----
 	int32 Meshes = 0, Quads = 0;

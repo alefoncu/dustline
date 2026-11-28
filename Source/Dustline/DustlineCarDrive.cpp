@@ -14,6 +14,8 @@
 #include "HAL/PlatformMisc.h"
 #include "UnrealClient.h"
 #include "Math/RandomStream.h"
+#include "Algo/Reverse.h"
+#include "Components/InstancedStaticMeshComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogDustlineDrive, Log, All);
 using namespace DustlineWorld;
@@ -821,23 +823,206 @@ void ADustlineCar::Tick(float DeltaTime)
 		}
 		if (T > 28.f) FPlatformMisc::RequestExit(false);
 	}
+	else if (float TtKmh = 0.f; FParse::Value(FCommandLine::Get(), TEXT("trailtest="), TtKmh))
+	{
+		// prueba de pistas: piloto automático (persecución pura) por la pista que sale del campamento; registra progreso y estado
+		static TArray<FVector2D> Path; static int32 Seg = 0; static float Done = 0.f, PT = 0.f, MaxPitch = 0.f, MaxRoll = 0.f; static FVector LastL;
+		if (Path.Num() == 0)
+		{
+			TArray<FString> Lines; FFileHelper::LoadFileToStringArray(Lines, *(FPaths::ProjectContentDir() / TEXT("Data") / TEXT("trails.txt")));
+			int32 Which = 0; FParse::Value(FCommandLine::Get(), TEXT("dtrail="), Which);
+			const FVector2D L(GetActorLocation()); float Bd = 1e30f; int32 Best = -1; bool bRev = false;
+			for (int32 k = 0; k < Lines.Num(); ++k)
+			{
+				TArray<FString> P; Lines[k].ParseIntoArray(P, TEXT(";")); if (P.Num() < 2) continue;
+				auto Pt = [&](const FString& S) { FString A, B; S.Split(TEXT(","), &A, &B); return FVector2D(FCString::Atof(*A), FCString::Atof(*B)); };
+				const float D0 = FVector2D::Distance(Pt(P[0]), L), D1 = FVector2D::Distance(Pt(P.Last()), L);
+				if (Which > 0) { if (k == Which - 1) { Best = k; bRev = D1 < D0; } continue; }
+				if (FMath::Min(D0, D1) < Bd) { Bd = FMath::Min(D0, D1); Best = k; bRev = D1 < D0; }
+			}
+			if (Best >= 0)
+			{
+				TArray<FString> P; Lines[Best].ParseIntoArray(P, TEXT(";"));
+				for (const FString& S : P) { FString A, B; S.Split(TEXT(","), &A, &B); Path.Add(FVector2D(FCString::Atof(*A), FCString::Atof(*B))); }
+				if (bRev) Algo::Reverse(Path);
+				// empieza en el principio de la pista, mirando hacia ella
+				FHitResult H; const FVector St(Path[0].X, Path[0].Y, 0.f);
+				if (GetWorld()->LineTraceSingleByChannel(H, St + FVector(0, 0, 80000), St - FVector(0, 0, 30000), ECC_Visibility))
+				{
+					const FVector2D D = Path[FMath::Min(3, Path.Num() - 1)] - Path[0];
+					SetActorLocationAndRotation(H.ImpactPoint + FVector(0, 0, ZCom + 30.f), FRotator(0.f, FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)), 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+					Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
+				}
+				LastL = GetActorLocation();
+				UE_LOG(LogDustlineDrive, Display, TEXT("TT pista %d con %d puntos, invertida %d"), Best + 1, Path.Num(), bRev ? 1 : 0);
+			}
+		}
+		const float T = Clock - 2.f;
+		if (Path.Num() > 1 && T > 0.f)
+		{
+			const FVector2D L(GetActorLocation());
+			// proyección sobre el tramo más cercano (ventana alrededor del último) y punto objetivo 9 m más adelante
+			{
+				float Bd = 1e30f; int32 Bs = Seg;
+				for (int32 k = FMath::Max(0, Seg - 4); k < FMath::Min(Path.Num() - 1, Seg + 30); ++k)
+				{
+					const FVector2D A = Path[k], B = Path[k + 1]; const float t = FMath::Clamp(FVector2D::DotProduct(L - A, B - A) / FMath::Max(1.f, (B - A).SizeSquared()), 0.f, 1.f);
+					const float D = FVector2D::DistSquared(L, A + (B - A) * t); if (D < Bd) { Bd = D; Bs = k; }
+				}
+				Seg = Bs;
+			}
+			auto Ahead = [&](float Dist) { float Acc = 0.f; for (int32 k = Seg; k < Path.Num() - 1; ++k) { const float l = FVector2D::Distance(Path[k], Path[k + 1]); if (Acc + l >= Dist) return FMath::Lerp(Path[k], Path[k + 1], (Dist - Acc) / FMath::Max(l, 1.f)); Acc += l; } return Path.Last(); };
+			const FVector2D Tgt = Ahead(900.f);
+			const float Yaw = GetActorRotation().Yaw, Want = FMath::RadiansToDegrees(FMath::Atan2(Tgt.Y - L.Y, Tgt.X - L.X));
+			const float Err = FMath::FindDeltaAngleDegrees(Yaw, Want);
+			Steer = FMath::Clamp(-Err / 22.f, -1.f, 1.f);
+			// velocidad según la curva de los próximos 25 m (aceleración lateral ~0,3 g)
+			const FVector2D P1 = Ahead(500.f), P2 = Ahead(1500.f), P3 = Ahead(2500.f);
+			const float Turn = FMath::Abs(FMath::FindDeltaAngleDegrees(FMath::RadiansToDegrees(FMath::Atan2(P2.Y - P1.Y, P2.X - P1.X)), FMath::RadiansToDegrees(FMath::Atan2(P3.Y - P2.Y, P3.X - P2.X))));
+			const float Rad = 10.f / FMath::Max(FMath::DegreesToRadians(Turn), 0.01f);
+			const float Want2 = FMath::Min(TtKmh, FMath::Sqrt(3.f * Rad) * 3.6f) * FMath::Lerp(1.f, 0.5f, FMath::Clamp(FMath::Abs(Err) / 45.f, 0.f, 1.f));
+			// agua delante: se entra al paso (como haría un conductor) para no levantar ola
+			float Wv = Want2; { float Lv; FVector2D Fl; for (const float Da : { 1000.f, 2000.f, 3000.f }) { const FVector2D Aw = Ahead(Da); if (DustlineWorld::WaterAt(Aw.X, Aw.Y, Lv, Fl)) Wv = FMath::Min(Wv, 6.f + Da / 300.f); } if (bInWater) Wv = FMath::Min(Wv, 6.f); }
+			Throttle = FMath::Clamp((FMath::Max(Wv, 5.f) - SpeedKmh) * 0.12f, -1.f, 1.f);
+			Done += FVector2D::Distance(L, FVector2D(LastL)) / 100.f; LastL = GetActorLocation();
+			MaxPitch = FMath::Max(MaxPitch, FMath::Abs(GetActorRotation().Pitch)); MaxRoll = FMath::Max(MaxRoll, FMath::Abs(GetActorRotation().Roll));
+			PT += dt;
+			if (PT > 3.f)
+			{
+				PT = 0.f; float Off = 1e9f;   // distancia a la pista
+				for (int32 k = FMath::Max(0, Seg - 2); k < FMath::Min(Path.Num() - 1, Seg + 3); ++k) { const FVector2D A = Path[k], B = Path[k + 1]; const float t = FMath::Clamp(FVector2D::DotProduct(L - A, B - A) / FMath::Max(1.f, (B - A).SizeSquared()), 0.f, 1.f); Off = FMath::Min(Off, FVector2D::Distance(L, A + (B - A) * t) / 100.f); }
+				UE_LOG(LogDustlineDrive, Display, TEXT("TT t=%.0f v=%.0f recorrido=%.0f m tramo=%d/%d fuera=%.1f m pitch=%.0f roll=%.0f max=%.0f/%.0f surf=%s up=%.2f agua=%.2f"), T, SpeedKmh, Done, Seg, Path.Num(), Off, GetActorRotation().Pitch, GetActorRotation().Roll, MaxPitch, MaxRoll, *SurfaceName, GetActorUpVector().Z, WaterDepthM);
+			}
+			if (Seg >= Path.Num() - 2 && FVector2D::Distance(L, Path.Last()) < 1500.f) { UE_LOG(LogDustlineDrive, Display, TEXT("TT FIN pista completa: %.0f m en %.0f s"), Done, T); FPlatformMisc::RequestExit(false); }
+		}
+		float Lim = 240.f; FParse::Value(FCommandLine::Get(), TEXT("ttmax="), Lim);
+		if (T > Lim) { UE_LOG(LogDustlineDrive, Display, TEXT("TT FIN tiempo: %.0f m, tramo %d/%d"), Done, Seg, Path.Num()); FPlatformMisc::RequestExit(false); }
+	}
 	else if (bAutoDrive) { Throttle = 1.f; Steer = 0.55f * FMath::Sin(Clock * 0.45f); Boost = Clock > 3.f; }
 	else if (PC && !bPaused && !bShowcase && !bGarage && !(Menu.IsValid() && Menu->IsOpen()))
 	{
-		Throttle = (PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up) ? 1.f : 0.f) - (PC->IsInputKeyDown(EKeys::S) || PC->IsInputKeyDown(EKeys::Down) ? 1.f : 0.f);
-		Steer = (PC->IsInputKeyDown(EKeys::A) || PC->IsInputKeyDown(EKeys::Left) ? 1.f : 0.f) - (PC->IsInputKeyDown(EKeys::D) || PC->IsInputKeyDown(EKeys::Right) ? 1.f : 0.f);
-		Hand = PC->IsInputKeyDown(EKeys::SpaceBar); Boost = PC->IsInputKeyDown(EKeys::LeftShift);
-		if (PC->WasInputKeyJustPressed(EKeys::R)) ResetUpright();
-		if (PC->WasInputKeyJustPressed(EKeys::C)) CamMode = (CamMode + 1) % 3;
-		if (PC->WasInputKeyJustPressed(EKeys::B)) bDiffLock = !bDiffLock;
-		if (PC->WasInputKeyJustPressed(EKeys::L) && Sp.bHasLow && SpeedKmh < 8.f) { bLowRange = !bLowRange; Gear = Gear < 0 ? -1 : 1; }
+		// teclado: gas y volante progresivos (como pisar un pedal), para poder dosificar en barro, nieve o trial
+		const float KT = (PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up) ? 1.f : 0.f) - (PC->IsInputKeyDown(EKeys::S) || PC->IsInputKeyDown(EKeys::Down) ? 1.f : 0.f);
+		const float KS = (PC->IsInputKeyDown(EKeys::A) || PC->IsInputKeyDown(EKeys::Left) ? 1.f : 0.f) - (PC->IsInputKeyDown(EKeys::D) || PC->IsInputKeyDown(EKeys::Right) ? 1.f : 0.f);
+		auto Ramp = [dt](float& V, float Tgt, float Up, float Down) { const float R = (FMath::Abs(Tgt) > FMath::Abs(V) && Tgt * V >= 0.f) ? Up : Down; V = FMath::FInterpConstantTo(V, Tgt, dt, R); };
+		Ramp(KeyThr, KT, 2.6f, 6.f); Ramp(KeySteer, KS, 4.5f, 7.f);
+		// mando: gatillo derecho gas, izquierdo freno / marcha atrás, stick izquierdo volante (con zona muerta y curva suave)
+		const float RT = PC->GetInputAnalogKeyState(EKeys::Gamepad_RightTriggerAxis), LT = PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftTriggerAxis);
+		float LX = PC->GetInputAnalogKeyState(EKeys::Gamepad_LeftX);
+		LX = FMath::Sign(LX) * FMath::Pow(FMath::Clamp((FMath::Abs(LX) - 0.08f) / 0.92f, 0.f, 1.f), 1.4f);
+		const float PadT = RT - LT, PadS = -LX;
+		Throttle = FMath::Abs(PadT) > 0.03f ? PadT : KeyThr;
+		Steer = FMath::Abs(PadS) > 0.01f ? PadS : KeySteer;
+		Hand = PC->IsInputKeyDown(EKeys::SpaceBar) || PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Bottom);
+		Boost = PC->IsInputKeyDown(EKeys::LeftShift) || PC->IsInputKeyDown(EKeys::Gamepad_FaceButton_Left);
+		auto Pressed = [PC](FKey K1, FKey K2) { return PC->WasInputKeyJustPressed(K1) || PC->WasInputKeyJustPressed(K2); };
+		if (Pressed(EKeys::R, EKeys::Gamepad_Special_Left)) ResetUpright();
+		if (Pressed(EKeys::C, EKeys::Gamepad_FaceButton_Top)) CamMode = (CamMode + 1) % 3;
+		if (Pressed(EKeys::B, EKeys::Gamepad_FaceButton_Right)) bDiffLock = !bDiffLock;
+		if (Pressed(EKeys::L, EKeys::Gamepad_DPad_Down) && Sp.bHasLow && SpeedKmh < 8.f) { bLowRange = !bLowRange; Gear = Gear < 0 ? -1 : 1; }
+		if (Pressed(EKeys::M, EKeys::Gamepad_DPad_Up)) bMapOpen = !bMapOpen;
 		if (bManual)
 		{
-			if (PC->WasInputKeyJustPressed(EKeys::E)) { Gear = Gear < 0 ? 0 : FMath::Min(Gear + 1, Sp.NGears); ShiftT = 0.25f; }
-			if (PC->WasInputKeyJustPressed(EKeys::Q)) { Gear = Gear <= 0 ? -1 : Gear - 1; ShiftT = 0.25f; if (Gear == 0 && SpeedKmh > 5.f) Gear = 1; }
+			if (Pressed(EKeys::E, EKeys::Gamepad_RightShoulder)) { Gear = Gear < 0 ? 0 : FMath::Min(Gear + 1, Sp.NGears); ShiftT = 0.25f; }
+			if (Pressed(EKeys::Q, EKeys::Gamepad_LeftShoulder)) { Gear = Gear <= 0 ? -1 : Gear - 1; ShiftT = 0.25f; if (Gear == 0 && SpeedKmh > 5.f) Gear = 1; }
 		}
 	}
+	else { KeyThr = KeySteer = 0.f; }
+	// puntos de interés: se descubren al llegar (a menos de 35 m)
+	if (!bGarage && !bShowcase)
+	{
+		TArray<DustlineWorld::FPoi>& P = DustlineWorld::Pois();
+		const FVector L = GetActorLocation();
+		for (DustlineWorld::FPoi& Pt : P)
+			if (!Pt.bFound && FVector2D::DistSquared(FVector2D(L), FVector2D(Pt.P)) < 3500.f * 3500.f)
+			{
+				Pt.bFound = true; DustlineWorld::SaveDiscovered();
+				int32 Nf = 0; for (const DustlineWorld::FPoi& Q : P) Nf += Q.bFound ? 1 : 0;
+				Toast = FString::Printf(TEXT("Descubierto: %s  \u00B7  %d de %d"), *Pt.Name, Nf, P.Num()); ToastT = Clock;
+				UE_LOG(LogDustlineDrive, Display, TEXT("POI descubierto %s (%d/%d)"), *Pt.Name, Nf, P.Num());
+			}
+	}
+	if (FParse::Param(FCommandLine::Get(), TEXT("dmap")) && Clock > 4.f && Clock < 4.1f) bMapOpen = true;   // capturas del mapa
 	{ FString Dl; if (FParse::Value(FCommandLine::Get(), TEXT("dlock="), Dl)) bDiffLock = Dl == TEXT("1"); if (FParse::Param(FCommandLine::Get(), TEXT("dlow"))) bLowRange = Sp.bHasLow; }
+	// -probe=X,Y: rejilla de alturas de 60x60 m cada 1 m alrededor de un punto (diagnóstico de pistas) -> /Volumes/SSD/UE-Cache/probe.txt
+	if (FString Pr; FParse::Value(FCommandLine::Get(), TEXT("probe="), Pr, false) && Clock > 3.f)
+	{
+		static bool bDone = false;
+		if (!bDone)
+		{
+			bDone = true; FString A, B; Pr.Split(TEXT(","), &A, &B); const float X0 = FCString::Atof(*A), Y0 = FCString::Atof(*B);
+			FString Out; FCollisionQueryParams Pq(SCENE_QUERY_STAT(DustlineProbe), false, this);
+			for (int32 j = -30; j <= 30; ++j) { for (int32 i = -30; i <= 30; ++i) { FHitResult H; const FVector P(X0 + i * 100.f, Y0 + j * 100.f, 0.f); float Z = -1e5f; float Lv; FVector2D Fl;
+				if (GetWorld()->LineTraceSingleByChannel(H, P + FVector(0, 0, 90000), P - FVector(0, 0, 30000), ECC_Visibility, Pq)) Z = H.ImpactPoint.Z;
+				const float W = DustlineWorld::WaterAt(P.X, P.Y, Lv, Fl) ? Lv : -1e5f;
+				Out += FString::Printf(TEXT("%.0f %.0f "), Z, W); } Out += TEXT("\n"); }
+			FFileHelper::SaveStringToFile(Out, TEXT("/Volumes/SSD/UE-Cache/probe.txt"));
+			FPlatformMisc::RequestExit(false);
+		}
+	}
+	// -trailprofile: perfil real de cada pista sobre el terreno (rampa en 6 m e inclinación lateral a ±2,5 m), cada 2 m
+	if (FParse::Param(FCommandLine::Get(), TEXT("trailprofile")) && Clock > 3.f)
+	{
+		static bool bDone = false;
+		if (!bDone)
+		{
+			bDone = true;
+			TArray<FString> Lines; FFileHelper::LoadFileToStringArray(Lines, *(FPaths::ProjectContentDir() / TEXT("Data") / TEXT("trails.txt")));
+			FCollisionQueryParams Pq(SCENE_QUERY_STAT(DustlineTrailProf), false, this);
+			auto Gz = [&](const FVector2D& P, bool& bLand) { FHitResult H; bLand = false; if (!GetWorld()->LineTraceSingleByChannel(H, FVector(P.X, P.Y, 90000), FVector(P.X, P.Y, -30000), ECC_Visibility, Pq)) return 0.f; bLand = H.GetComponent() && H.GetComponent()->IsA<ULandscapeHeightfieldCollisionComponent>(); return (float)H.ImpactPoint.Z; };
+			FString Csv;
+			for (int32 k = 0; k < Lines.Num(); ++k)
+			{
+				TArray<FString> P; Lines[k].ParseIntoArray(P, TEXT(";")); TArray<FVector2D> Pts;
+				for (const FString& S : P) { FString A, B; S.Split(TEXT(","), &A, &B); Pts.Add(FVector2D(FCString::Atof(*A), FCString::Atof(*B))); }
+				TArray<FVector2D> Sm; for (int32 i = 0; i + 1 < Pts.Num(); ++i) { const int32 K = FMath::Max(1, (int32)(FVector2D::Distance(Pts[i], Pts[i + 1]) / 200.f)); for (int32 j = 0; j < K; ++j) Sm.Add(FMath::Lerp(Pts[i], Pts[i + 1], j / (double)K)); }
+				const int32 M = Sm.Num(); TArray<float> Z; Z.SetNum(M); int32 Obst = 0;
+				for (int32 i = 0; i < M; ++i) { bool bL; Z[i] = Gz(Sm[i], bL); Obst += bL ? 0 : 1; }
+				float MaxG = 0.f, MaxS = 0.f; int32 Steep = 0, Side = 0; FVector2D WorstG, WorstS;
+				TArray<float> Gs;
+				for (int32 i = 3; i < M - 3; ++i)
+				{
+					const float G = FMath::Abs(Z[i + 3] - Z[i - 3]) / FMath::Max(1.f, (float)FVector2D::Distance(Sm[i + 3], Sm[i - 3]));
+					Gs.Add(G); if (G > MaxG) { MaxG = G; WorstG = Sm[i]; } if (G > 0.25f) ++Steep;
+					const FVector2D D = (Sm[i + 1] - Sm[i - 1]).GetSafeNormal(), Pp(-D.Y, D.X); bool b1, b2;
+					const float Sd = FMath::Abs(Gz(Sm[i] + Pp * 250.f, b1) - Gz(Sm[i] - Pp * 250.f, b2)) / 500.f;
+					if (Sd > MaxS) { MaxS = Sd; WorstS = Sm[i]; } if (Sd > 0.2f) ++Side;
+				}
+				Gs.Sort(); const float P95 = Gs.Num() ? Gs[(int32)(Gs.Num() * 0.95f)] : 0.f;
+				UE_LOG(LogDustlineDrive, Display, TEXT("TP pista %d: %.0f m  rampa p95=%.0f%% max=%.0f%% en %.0f,%.0f  tramos>25%%=%d  lateral max=%.0f%% en %.0f,%.0f  tramos lateral>20%%=%d  obstaculos=%d"),
+					k + 1, M * 2.f, P95 * 100.f, MaxG * 100.f, WorstG.X, WorstG.Y, Steep * 2, MaxS * 100.f, WorstS.X, WorstS.Y, Side * 2, Obst);
+			}
+			FPlatformMisc::RequestExit(false);
+		}
+	}
+	// -mapstats: muestrea todo el mapa cada 8 m (altura del primer impacto, qué es y agua) para analizar si se puede conducir
+	if (FParse::Param(FCommandLine::Get(), TEXT("mapstats")) && Clock > 3.f)
+	{
+		static bool bDone = false;
+		if (!bDone)
+		{
+			bDone = true;
+			const int32 N = 504; const float Step = 800.f, X0 = -201600.f + 400.f;
+			TArray<uint8> Out; Out.SetNumZeroed(N * N * 12);
+			FCollisionQueryParams Pq(SCENE_QUERY_STAT(DustlineMapStats), false, this);
+			for (int32 j = 0; j < N; ++j) for (int32 i = 0; i < N; ++i)
+			{
+				const float X = X0 + i * Step, Y = X0 + j * Step;
+				FHitResult H; float Z = -1e9f; uint8 Kind = 3;
+				if (GetWorld()->LineTraceSingleByChannel(H, FVector(X, Y, 90000), FVector(X, Y, -30000), ECC_Visibility, Pq))
+				{
+					Z = H.ImpactPoint.Z;
+					Kind = (H.GetComponent() && H.GetComponent()->IsA<ULandscapeHeightfieldCollisionComponent>()) ? 0 : (H.GetComponent() && H.GetComponent()->IsA<UInstancedStaticMeshComponent>() ? 1 : 2);
+				}
+				float Lv; FVector2D Fl; const float W = DustlineWorld::WaterAt(X, Y, Lv, Fl) ? Lv : -1e9f;
+				uint8* C = &Out[(j * N + i) * 12]; FMemory::Memcpy(C, &Z, 4); FMemory::Memcpy(C + 4, &W, 4); C[8] = Kind;
+			}
+			const FVector L = GetActorLocation();
+			UE_LOG(LogDustlineDrive, Display, TEXT("MAPSTATS spawn=%.0f,%.0f"), L.X, L.Y);
+			FFileHelper::SaveArrayToFile(Out, TEXT("/Volumes/SSD/UE-Cache/mapstats.bin"));
+			FPlatformMisc::RequestExit(false);
+		}
+	}
 	if (FParse::Param(FCommandLine::Get(), TEXT("garagedemo")))
 	{
 		static int32 Step = 0;
@@ -851,12 +1036,14 @@ void ADustlineCar::Tick(float DeltaTime)
 		else if (Step == 6 && Clock > 31.f) { FPlatformMisc::RequestExit(false); }
 	}
 	Cam->FieldOfView = Set.Fov;
-	const bool bDemoRun = bAutoDrive || bPhysTest || FParse::Param(FCommandLine::Get(), TEXT("garagedemo")) || FParse::Param(FCommandLine::Get(), TEXT("nomenu")) || FCString::Strifind(FCommandLine::Get(), TEXT("watertest=")) || FParse::Value(FCommandLine::Get(), TEXT("dshot="), Shot0);
+	const bool bDemoRun = bAutoDrive || bPhysTest || FParse::Param(FCommandLine::Get(), TEXT("garagedemo")) || FParse::Param(FCommandLine::Get(), TEXT("nomenu")) || FCString::Strifind(FCommandLine::Get(), TEXT("watertest=")) || FCString::Strifind(FCommandLine::Get(), TEXT("trailtest=")) || FParse::Param(FCommandLine::Get(), TEXT("trailprofile")) || FCString::Strifind(FCommandLine::Get(), TEXT("probe=")) || FParse::Value(FCommandLine::Get(), TEXT("dshot="), Shot0);
 	if (!bMenuStarted && Clock > 0.3f && PC) { bMenuStarted = true; Menu = MakeShared<FDustlineMenu>(this); Menu->Start(!bDemoRun); }
 	if (PC && Menu.IsValid())
 	{
-		if (PC->WasInputKeyJustPressed(EKeys::Escape)) Menu->OnEscape();
-		else if (PC->WasInputKeyJustPressed(EKeys::G) && !Menu->IsOpen()) ToggleGarage();
+		if (PC->WasInputKeyJustPressed(EKeys::Escape) && bMapOpen && !Menu->IsOpen()) bMapOpen = false;   // Esc cierra el mapa
+		else if (PC->WasInputKeyJustPressed(EKeys::Escape) || PC->WasInputKeyJustPressed(EKeys::Gamepad_Special_Right)) Menu->OnEscape();
+		else if ((PC->WasInputKeyJustPressed(EKeys::G) || PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Right)) && !Menu->IsOpen()) ToggleGarage();
+		if (Menu->IsOpen() || bGarage) bMapOpen = false;
 	}
 	else if (PC && PC->WasInputKeyJustPressed(EKeys::G)) ToggleGarage();
 	if (FParse::Param(FCommandLine::Get(), TEXT("uidemo"))) UiDemo();
