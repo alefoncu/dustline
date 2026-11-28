@@ -457,6 +457,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 	auto HintKey = [](const TCHAR* K, const TCHAR* L) -> TSharedRef<SWidget>
 	{ return SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[ KeyCap(K, 15.f) ] + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8, 0, 22, 0)[ Text(L, 16.f, Label2()) ]; };
 	TSharedRef<SWidget> Hints = SNew(SBorder).BorderImage(Box(DUI::Clear(), 0.f))
+		.Visibility_Lambda([Weak, S]() { auto M = Weak.Pin(); return M.IsValid() && S->bHints && FPlatformTime::Seconds() - M->DriveStart < 11.0 ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
 		.ColorAndOpacity_Lambda([Weak, S]() { auto M = Weak.Pin(); if (!M.IsValid() || !S->bHints) return FLinearColor(1, 1, 1, 0); const float T = (float)(FPlatformTime::Seconds() - M->DriveStart); return FLinearColor(1, 1, 1, FMath::Clamp(1.f - (T - 9.f) / 2.f, 0.f, 1.f) * FMath::Clamp(T / 0.6f, 0.f, 1.f)); })
 		[ Glass(SNew(SHorizontalBox) + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("Esc"), TEXT("Pausa")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("G"), TEXT("Taller")) ]
 			+ SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("C"), TEXT("Cámara")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("R"), TEXT("Enderezar")) ] + SHorizontalBox::Slot().AutoWidth()[ HintKey(TEXT("M"), TEXT("Mapa")) ], 26.f, FMargin(20, 11, 0, 11)) ];
@@ -472,6 +473,7 @@ TSharedRef<SWidget> FDustlineMenu::BuildHud()
 				{ int32 F = 0; for (const DustlineWorld::FPoi& P : DustlineWorld::Pois()) F += P.bFound ? 1 : 0; return FText::FromString(FString::Printf(TEXT("%d/%d  \u00B7  M mapa"), F, DustlineWorld::Pois().Num())); }) ],
 			26.f, FMargin(18, 9, 22, 9)) ];
 	TSharedRef<SWidget> ToastW = SNew(SBorder).BorderImage(Box(DUI::Clear(), 0.f))
+		.Visibility_Lambda([C]() { return C && C->Clock - C->ToastT < 4.5f ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })   // el cristal no se queda vacío al desvanecerse
 		.ColorAndOpacity_Lambda([C]() { if (!C) return FLinearColor(1, 1, 1, 0); const float T = C->Clock - C->ToastT; return FLinearColor(1, 1, 1, FMath::Clamp(T / 0.3f, 0.f, 1.f) * FMath::Clamp((4.5f - T) / 0.8f, 0.f, 1.f)); })
 		[ Glass(SNew(STextBlock).Font(Font(24.f, 1)).ColorAndOpacity(Label()).Text_Lambda([C]() { return FText::FromString(C ? C->Toast : FString()); }), 26.f, FMargin(26, 14)) ];
 	// mapa a pantalla completa (M): relieve, agua y pistas, puntos de interés y el coche
