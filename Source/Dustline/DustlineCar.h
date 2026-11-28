@@ -83,6 +83,8 @@ public:
 	bool bHydrolock = false;     // el motor tragó agua acelerado: no arranca hasta pasar por el taller
 	bool bFloating = false;      // las ruedas apenas apoyan: el coche flota y lo lleva la corriente
 	float EngineBayWater = 0.f;  // agua sobre el encendido (m)
+	bool bOverturned = false;    // de lado o boca abajo y parado: hay que pulsar R
+	float InvertT = 0.f, OverT = 0.f;
 	float TyreClog() const { float C = 0.f; for (int32 i = 0; i < 4; ++i) C = FMath::Max(C, Wh[i].Clog); return C; }
 	FString WeatherLabel; float TempC = 12.f;
 	// ---- carácter de cada modelo ----

@@ -141,6 +141,8 @@ void ADustlineCar::BeginPlay()
 	// -dpos=X,Y para probar en un sitio concreto (en cm)
 	FString PosS; if (FParse::Value(Cmd, TEXT("dpos="), PosS, false)) { FString A, B; if (PosS.Split(TEXT(","), &A, &B)) SetActorLocation(FVector(FCString::Atof(*A), FCString::Atof(*B), 60000.f)); }
 	{ float Yaw = 0.f; if (FParse::Value(Cmd, TEXT("dyaw="), Yaw)) SetActorRotation(FRotator(0.f, Yaw, 0.f)); }
+	// -droll=GRADOS: empieza tumbado (90 = de lado, 180 = boca abajo) para probar que volcado no se conduce
+	float RollDeg = 0.f; const bool bRollTest = FParse::Value(Cmd, TEXT("droll="), RollDeg);
 	// -dpool=PROFUNDIDAD,CORRIENTE: charca de prueba de 18 m de radio que empieza 14 m por delante del coche; la corriente va de izquierda a derecha
 	if (FString PoolS; FParse::Value(Cmd, TEXT("dpool="), PoolS, false))
 	{
@@ -212,7 +214,8 @@ void ADustlineCar::BeginPlay()
 	}
 	FHitResult Hit; const FVector L0 = GetActorLocation();
 	if (GetWorld()->LineTraceSingleByChannel(Hit, L0 + FVector(0, 0, 3000), L0 - FVector(0, 0, 80000), ECC_Visibility))
-		SetActorLocation(FVector(L0.X, L0.Y, Hit.ImpactPoint.Z + ZCom + 25.f), false, nullptr, ETeleportType::TeleportPhysics);
+		SetActorLocation(FVector(L0.X, L0.Y, Hit.ImpactPoint.Z + (bRollTest ? 160.f : ZCom + 25.f)), false, nullptr, ETeleportType::TeleportPhysics);
+	if (bRollTest) { FRotator R = GetActorRotation(); R.Roll = RollDeg; SetActorRotation(R); }
 	Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
 	for (FWheelPhys& W : Wh) { W.Omega = 0.f; W.Sink = 0.f; }
 	Gear = 1; Rpm = Sp.Idle;
@@ -229,7 +232,7 @@ void ADustlineCar::ResetUpright()
 	SetActorLocationAndRotation(FVector(L0.X, L0.Y, Z), R, false, nullptr, ETeleportType::TeleportPhysics);
 	Vel = FVector::ZeroVector; AngVel = FVector::ZeroVector;
 	for (FWheelPhys& W : Wh) { W.Omega = 0.f; W.Sink = 0.f; }
-	bStalled = bHydrolock; Flood = 0.f; Gear = 1;
+	bStalled = bHydrolock; Flood = 0.f; Gear = 1; InvertT = OverT = 0.f; bOverturned = false;
 }
 
 void ADustlineCar::UpdateWater()
@@ -339,7 +342,7 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	// ---------------- contacto de ruedas (fase 1: suspensión) ----------------
 	const float zA = Sp.R + 0.55f * Sp.RestLen;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(DustlineWheel), false, this);
-	struct FC { bool C = false; FVector Hit, N, Rc, Wf, Lat; float Fs = 0, Comp = 0, Crr = 0; FGround G; FTire T; float Vl = 0, Vs = 0; bool bWater = false; } Cw[4];
+	struct FC { bool C = false; FVector Hit, N, Rc, Wf, Lat; float Fs = 0, Comp = 0, Crr = 0; FGround G; FTire T; float Vl = 0, Vs = 0; bool bWater = false; float Upr = 1.f; } Cw[4];
 	const float Nnom = mass * Gr / 4.f;
 	// agua en cada rueda (nivel y corriente en su sitio: a caballo de la orilla una rueda vadea y la otra no)
 	float WLv[4]; FVector WFl[4], WAnchor[4];
@@ -359,12 +362,17 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 		FHitResult Hit;
 		if (!GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params)) { Wh[i].Contact = false; Wh[i].Length = FMath::FInterpTo(Wh[i].Length, Sp.RestLen, dt, 8.f); Wh[i].Sink *= 1.f - dt * 2.f; continue; }
 		const FVector n = Hit.ImpactNormal.GetSafeNormal();
+		// el neumático solo agarra con la banda de rodadura: si el suelo no queda más o menos debajo de la rueda (coche de lado,
+		// volcado o la rueda contra un talud) no hay contacto de rueda; lo que toque lo llevan los puntos de la carrocería
+		const float CosA = (float)FVector::DotProduct(n, UpB);
+		if (CosA < 0.35f) { Wh[i].Contact = false; Wh[i].Length = FMath::FInterpTo(Wh[i].Length, Sp.RestLen, dt, 8.f); continue; }
 		FC& c = Cw[i];
+		c.Upr = Smooth(0.35f, 0.65f, CosA);   // de 50° a 70° el agarre se va perdiendo (flanco del neumático)
 		c.G = GroundAt(Hit.ImpactPoint.X, Hit.ImpactPoint.Y, Hit.ImpactPoint.Z, n.Z, Setup.TireType);
 		const float WdHit = WLv[i] - (float)Hit.ImpactPoint.Z / 100.f;   // agua sobre la huella
 		if (WdHit > 0.f) Submerge(c.G, WdHit, WFl[i].Size(), Setup.TireType);   // fondo del río: cantos con verdín o limo
 		const float Bump = c.G.Bump * (VNoise(Hit.ImpactPoint.X / 70.f, Hit.ImpactPoint.Y / 70.f) * 2.f - 1.f) + c.G.Bump * 0.4f * (VNoise(Hit.ImpactPoint.X / 23.f + 7.f, Hit.ImpactPoint.Y / 23.f) * 2.f - 1.f);
-		const float dist = ((Hit.Distance - 60.0) / 100.0) * FMath::Max(0.3f, (float)FVector::DotProduct(n, UpB));
+		const float dist = ((Hit.Distance - 60.0) / 100.0) * CosA;
 		const float L = dist - Sp.R + Wh[i].Sink - Bump;
 		Wh[i].Length = FMath::Clamp(L, 0.1f, Sp.RestLen);
 		if (L >= Sp.RestLen) { Wh[i].Contact = false; continue; }
@@ -440,7 +448,8 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 				const float Aqua = Film * Smooth(13.f, 25.f, FMath::Abs(c.Vl)) * AquaTire[FMath::Clamp(Setup.TireType, 0, 4)];
 				Mu *= 1.f - 0.6f * FMath::Clamp(Aqua, 0.f, 1.f);
 			}
-			c.T = { FMath::Max(Mu, 0.04f), c.G.PeakSlip, c.G.PeakAlpha * H.TyreAlpha, c.G.Falloff };
+			Mu *= c.Upr;
+			c.T = { FMath::Max(Mu, 0.04f * c.Upr + 0.001f), c.G.PeakSlip, c.G.PeakAlpha * H.TyreAlpha, c.G.Falloff };
 			// hundimiento: presión (carga / huella) y patinaje que excava; al rodar limpio el neumático sale hacia arriba
 			const float Press = FMath::Sqrt(FMath::Max(N, 0.f) / Nnom) * FMath::Lerp(1.f, sinkWidth, Soft) * FMath::Sqrt(0.40f / Sp.R);
 			const float Target = c.G.Sink * Press;
@@ -660,6 +669,15 @@ void ADustlineCar::StepPhysics(float dt, float Throttle, float Steer, bool bHand
 	WetBrakes = FMath::Max(0.f, WetBrakes - dt * (0.006f + 0.22f * brake * Smooth(1.f, 8.f, Vel.Size())));
 	// flota si las ruedas apenas cargan peso y hay agua bajo el coche
 	{ float Ld = 0.f; for (int32 i = 0; i < 4; ++i) Ld += Wh[i].Contact ? Wh[i].Load : 0.f; bFloating = bWet && WaterDepthM > 0.2f && Ld < 0.2f * mass * Gr; }
+	// volcado: boca abajo el motor se queda sin aceite ni gasolina y se para; de lado o boca abajo y casi parado = "Volcado"
+	{
+		const float UpZ = (float)UpB.Z;
+		InvertT = UpZ < -0.3f ? InvertT + dt : 0.f;
+		if (InvertT > 3.f && !bStalled) { bStalled = true; StallT = 0.f; UE_LOG(LogDustlineDrive, Display, TEXT("DRIVE motor parado: coche boca abajo")); }
+		if (InvertT > 0.f) StallT = 0.f;
+		OverT = (UpZ < 0.4f && Vel.Size() < 3.f) ? OverT + dt : 0.f;
+		bOverturned = OverT > 1.5f;
+	}
 	if (bStalled && !bHydrolock && StallT > 2.5f) bStalled = false;
 
 	// aire, gravedad e integración
